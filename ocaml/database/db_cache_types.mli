@@ -1,41 +1,41 @@
 module Row :
   sig
     type t
-    val add : string -> string -> t -> t
-	val add_defaults : Schema.Table.t -> t -> t
+    val add : int64 -> string -> string -> t -> t
+	val add_defaults : int64 -> Schema.Table.t -> t -> t
     val empty : t
-    val fold : (string -> string -> 'a -> 'a) -> t -> 'a -> 'a
+    val fold : (string -> int64 -> int64 -> string -> 'a -> 'a) -> t -> 'a -> 'a
     val find : string -> t -> string
     val iter : (string -> string -> unit) -> t -> unit
     val remove : string -> t -> t
-    val update : string -> string -> (string -> string) -> t -> t
+    val update : int64 -> string -> string -> (string -> string) -> t -> t
   end
 
 module Table :
   sig
     type t
-    val add : string -> Row.t -> t -> t
+    val add : int64 -> string -> Row.t -> t -> t
     val empty : t
-    val fold : (string -> Row.t -> 'a -> 'a) -> t -> 'a -> 'a
+    val fold : (string -> int64 -> int64 -> Row.t -> 'a -> 'a) -> t -> 'a -> 'a
 	val find_exn : string -> string -> t -> Row.t
     val find : string -> t -> Row.t
     val iter : (string -> Row.t -> unit) -> t -> unit
-    val remove : string -> t -> t
-    val update : string -> Row.t -> (Row.t -> Row.t) -> t -> t
-
+    val remove : int64 -> string -> t -> t
+    val update : int64 -> string -> Row.t -> (Row.t -> Row.t) -> t -> t
+    val fold_over_recent : int64 -> (int64 -> int64 -> int64 -> string -> 'b -> 'b) -> (unit -> unit) -> t -> 'b -> 'b
 	val rows : t -> Row.t list
   end
 
 module TableSet :
   sig
     type t
-    val add : string -> Table.t -> t -> t
+    val add : int64 -> string -> Table.t -> t -> t
     val empty : t
-    val fold : (string -> Table.t -> 'a -> 'a) -> t -> 'a -> 'a
+    val fold : (string -> int64 -> int64 -> Table.t -> 'a -> 'a) -> t -> 'a -> 'a
     val find : string -> t -> Table.t
     val iter : (string -> Table.t -> unit) -> t -> unit
     val remove : string -> t -> t
-    val update : string -> Table.t -> (Table.t -> Table.t) -> t -> t
+    val update : int64 -> string -> Table.t -> (Table.t -> Table.t) -> t -> t
   end
 
 module Manifest :
