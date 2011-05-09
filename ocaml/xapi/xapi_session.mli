@@ -18,7 +18,7 @@
 (** {2 (Fill in Title!)} *)
 
 (* TODO: consider updating sm_exec.ml and removing login_no_password from this mli *)
-val login_no_password: __context:Context.t -> uname:string option -> host:[ `host ] Ref.t -> pool:bool -> is_local_superuser:bool -> subject:[ `subject ] Ref.t -> auth_user_sid:string -> auth_user_name:string -> rbac_permissions:string list -> [ `session ] Ref.t
+val login_no_password: __context:Context.t -> uname:string option -> host:[ `host ] Ref.t -> pool:bool -> is_local_superuser:bool -> subject:[ `subject ] Ref.t -> auth_user_sid:string -> auth_user_name:string -> rbac_permissions:string list -> version:string -> [ `session ] Ref.t
 
 (* public functions *)
 val destroy_db_session: __context:Context.t -> self:API.ref_session -> unit
@@ -27,7 +27,7 @@ val consider_touching_session: (XMLRPC.xmlrpc -> XMLRPC.xmlrpc) -> API.ref_sessi
 val slave_login: __context:Context.t -> host:[ `host ] Ref.t -> psecret:string -> [ `session ] Ref.t
 val slave_local_login: __context:Context.t -> psecret:string -> API.ref_session
 val slave_local_login_with_password: __context:Context.t -> uname:string -> pwd:string -> API.ref_session
-val login_with_password: __context:Context.t ->  uname:string -> pwd:string -> version:'a -> [ `session ] Ref.t
+val login_with_password: __context:Context.t ->  uname:string -> pwd:string -> version:string -> [ `session ] Ref.t
 val change_password: __context:Context.t -> old_pwd:string -> new_pwd:string -> unit
 val logout: __context:Context.t -> unit
 val local_logout: __context:Context.t -> unit

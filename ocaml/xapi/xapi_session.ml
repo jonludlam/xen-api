@@ -268,7 +268,7 @@ let revalidate_all_sessions ~__context =
 
 (* XXX: only used internally by the code which grants the guest access to the API.
    Needs to be protected by a proper access control system *)
-let login_no_password ~__context ~uname ~host ~pool ~is_local_superuser ~subject ~auth_user_sid ~auth_user_name ~rbac_permissions =
+let login_no_password ~__context ~uname ~host ~pool ~is_local_superuser ~subject ~auth_user_sid ~auth_user_name ~rbac_permissions ~version =
 	let session_id = Ref.make () in
 	let uuid = Uuid.to_string (Uuid.make_uuid ()) in
 	let user = Ref.null in (* always return a null reference to the deprecated user object *)
@@ -286,7 +286,7 @@ let login_no_password ~__context ~uname ~host ~pool ~is_local_superuser ~subject
 		(trackid session_id) pool (match uname with None->""|Some u->u) is_local_superuser auth_user_sid (trackid parent);
 	Db.Session.create ~__context ~ref:session_id ~uuid
 	                  ~this_user:user ~this_host:host ~pool:pool
-	                  ~last_active:(Date.of_float (Unix.time ())) ~other_config:[] 
+	                  ~last_active:(Date.of_float (Unix.time ())) ~other_config:["version",version] 
 	                  ~subject:subject ~is_local_superuser:is_local_superuser
 	                  ~auth_user_sid ~validation_time:(Date.of_float (Unix.time ()))
 	                  ~auth_user_name ~rbac_permissions ~parent;
@@ -327,6 +327,7 @@ let slave_login ~__context ~host ~psecret =
   login_no_password ~__context ~uname:None ~host:host ~pool:true 
       ~is_local_superuser:true ~subject:(Ref.null) ~auth_user_sid:""
       ~auth_user_name:(Ref.string_of host) ~rbac_permissions:[]
+	  ~version:"1.2"
 
 (* Emergency mode login, uses local storage *)
 let slave_local_login ~__context ~psecret = 
@@ -355,14 +356,14 @@ let slave_local_login_with_password ~__context ~uname ~pwd = wipe_params_after_f
    2. otherwise, Session.login_with_password will only attempt to authenticate against the local superuser credentials
 *)
 let login_with_password ~__context ~uname ~pwd ~version = wipe_params_after_fn [pwd] (fun () ->
-  (* !!! Do something with the version number *)
 	if (Context.preauth ~__context) then
 	begin
 		(* in this case, the context origin of this login request is a unix socket bound locally to a filename *)
 		(* we trust requests from local unix filename sockets, so no need to authenticate them before login *)
 		login_no_password ~__context ~uname:(Some uname) ~host:(Helpers.get_localhost ~__context) 
 			~pool:false ~is_local_superuser:true ~subject:(Ref.null)
-			~auth_user_sid:"" ~auth_user_name:uname ~rbac_permissions:[]
+			~auth_user_sid:"" ~auth_user_name:uname ~rbac_permissions:[] 
+			~version
 	end 
 	else
 	let login_as_local_superuser auth_type = 
@@ -374,7 +375,7 @@ let login_with_password ~__context ~uname ~pwd ~version = wipe_params_after_fn [
 			debug "Successful local authentication user %s from %s" uname (Context.get_origin __context);
 			login_no_password ~__context ~uname:(Some uname) ~host:(Helpers.get_localhost ~__context) 
 				~pool:false ~is_local_superuser:true ~subject:(Ref.null) ~auth_user_sid:"" ~auth_user_name:uname
-				~rbac_permissions:[]
+				~rbac_permissions:[] ~version
 		end
 	in	
 	let thread_delay_and_raise_error ?(error=Api_errors.session_authentication_failed) uname msg =
@@ -532,7 +533,7 @@ let login_with_password ~__context ~uname ~pwd ~version = wipe_params_after_fn [
 						) in 
 						login_no_password ~__context ~uname:(Some uname) ~host:(Helpers.get_localhost ~__context) 
 							~pool:false ~is_local_superuser:false ~subject:subject ~auth_user_sid:subject_identifier ~auth_user_name:subject_name
-							~rbac_permissions
+							~rbac_permissions ~version
 					end
 				(* we only reach this point if for some reason a function above forgot to catch a possible exception in the Auth_signature module*)
 				with
@@ -724,4 +725,4 @@ let create_readonly_session ~__context ~uname =
 	let master = Db.Pool.get_master ~__context ~self:pool in
 	login_no_password ~__context ~uname:(Some uname) ~host:master ~pool:false
 		~is_local_superuser:false ~subject:Ref.null ~auth_user_sid:"readonly-sid"
-		~auth_user_name:uname ~rbac_permissions
+		~auth_user_name:uname ~rbac_permissions ~version:"1.2"

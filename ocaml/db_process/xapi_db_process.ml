@@ -133,7 +133,7 @@ let do_write_hostiqn() =
 				  (* ... otherwise add new key/value pair *)
 				  (_iscsi_iqn,new_iqn)::other_config in
 		  let other_config = String_marshall_helper.map (fun x->x) (fun x->x) other_config in
-		  Db_ref.update_database (Db_backend.make ()) (set_field_in_row Db_names.host r Db_names.other_config other_config);
+		  Db_ref.update_database (Db_backend.make ()) (set_field Db_names.host r Db_names.other_config other_config);
 		  write_out_databases()
 
 let do_am_i_in_the_database () = 

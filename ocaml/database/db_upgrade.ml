@@ -40,6 +40,7 @@ let generic_database_upgrade db =
 			  let row = Row.add_defaults g schema r in
 			  Table.add g objref row tbl in
 			let tbl = Table.fold add_fields_to_row tbl Table.empty in
-			set_table tblname tbl db
+			let g = Manifest.generation (Database.manifest db) in
+			((Database.update ++ (TableSet.update g tblname Table.empty)) (fun _ -> tbl)) db
 	  ) db schema_table_names
 
