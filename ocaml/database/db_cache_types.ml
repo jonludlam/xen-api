@@ -16,8 +16,6 @@ module type VAL = sig
 	type v
 end
 
-exception MissingKey of string
-
 (** A specialised StringMap whose range type is V.v, and which keeps a record of when records are created/updated *)
 module Map2 = functor(V: VAL) -> struct
 	type x = {
@@ -28,7 +26,7 @@ module Map2 = functor(V: VAL) -> struct
 	let empty = StringMap.empty
 	let fold f = StringMap.fold (fun key x -> f key x.created x.updated x.v)
 	let add generation key value = StringMap.add key {created=generation; updated=generation; v=value}
-	let find key map = try (StringMap.find key map).v with _ -> raise (MissingKey key)
+	let find key map = (StringMap.find key map).v 
 	let mem = StringMap.mem
 	let iter f = StringMap.iter (fun key x -> f key x.v)
 	let remove = StringMap.remove
