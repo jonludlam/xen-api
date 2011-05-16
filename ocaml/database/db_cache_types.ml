@@ -36,7 +36,7 @@ module Map2 = functor(V: VAL) -> struct
 		then
 			let old = find key row in
 			let newv = f old in
-			if newv = old 
+			if newv == old 
 			then row 
 			else updatefn ()				
 		else
