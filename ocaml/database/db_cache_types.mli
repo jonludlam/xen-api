@@ -9,6 +9,7 @@ module Row :
     val iter : (string -> string -> unit) -> t -> unit
     val remove : string -> t -> t
     val update : int64 -> string -> string -> (string -> string) -> t -> t
+	val fold_over_recent : int64 -> (int64 -> int64 -> int64 -> string -> string -> 'b -> 'b) -> t -> 'b -> 'b
   end
 
 module Table :
@@ -37,6 +38,7 @@ module TableSet :
     val iter : (string -> Table.t -> unit) -> t -> unit
     val remove : string -> t -> t
     val update : int64 -> string -> Table.t -> (Table.t -> Table.t) -> t -> t
+    val fold_over_recent : int64 -> (int64 -> int64 -> int64 -> string -> Table.t -> 'b -> 'b) -> t -> 'b -> 'b
   end
 
 module Manifest :

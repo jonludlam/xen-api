@@ -41,7 +41,7 @@ module Map2 = functor(V: VAL) -> struct
 			else updatefn ()				
 		else
 			updatefn ()
-	let fold_over_recent since f = StringMap.fold (fun x y z -> if y.updated > since then f y.created y.updated 0L x y.v z else z)
+	let fold_over_recent since f = StringMap.fold (fun x y z -> if y.updated >= since then f y.created y.updated 0L x y.v z else z)
 end
 
 module StringStringMap = Map2(struct type v = string end)
@@ -383,7 +383,7 @@ let is_valid tblname objref db =
 
 
 let get_field tblname objref fldname db =
-	Row.find fldname (Table.find objref (TableSet.find tblname (Database.tableset db)))
+	Row.find fldname (Table.find_exn tblname objref (TableSet.find tblname (Database.tableset db)))
 
 let unsafe_set_field g tblname objref fldname newval =
 	(Database.update 
