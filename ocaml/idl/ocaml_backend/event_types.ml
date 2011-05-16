@@ -66,4 +66,7 @@ let event_of_xmlrpc x =
   }
 
 (* Convert an XMLRPC array of events into a list of event records *)
-let events_of_xmlrpc = XMLRPC.From.array event_of_xmlrpc
+let events_of_xmlrpc xml = 
+	let kvpairs = XMLRPC.From.structure xml in
+	let events = try List.assoc "events" kvpairs with _ -> failwith "Event records corrupted!" in
+	XMLRPC.From.array event_of_xmlrpc events

@@ -318,7 +318,7 @@ let rec next_new ~__context =
 		let (timestamp,messages) =
 			if event_matches all_subs "message" then (!message_get_since_for_events) ~__context sub.last_timestamp else (0.0, []) in
 		debug "Got %d message events: [%s]" (List.length messages) (String.concat "," (List.map (fun (x,_) -> Ref.string_of x)  messages));
-		(timestamp, messages, List.fold_left
+		(timestamp, messages, tableset, List.fold_left
 			(fun acc table ->
 				 Db_cache_types.Table.fold_over_recent (Int64.add sub.last_id 1L)
 					 (fun ctime mtime dtime objref (creates,mods,deletes,last) ->
@@ -340,7 +340,7 @@ let rec next_new ~__context =
 	in
 
 	let rec grab_nonempty_range () =
-		let (timestamp, messages,(creates,mods,deletes,last)) as result = Db_lock.with_lock (fun () -> grab_range (Db_backend.make ())) in
+		let (timestamp, messages, tableset, (creates,mods,deletes,last)) as result = Db_lock.with_lock (fun () -> grab_range (Db_backend.make ())) in
 		if List.length creates = 0 && List.length mods = 0 && List.length deletes = 0 && List.length messages = 0
 		then
 			(
@@ -354,7 +354,7 @@ let rec next_new ~__context =
 			result
 	in
 
-	let (timestamp, messages, (creates,mods,deletes,last)) = grab_nonempty_range () in
+	let (timestamp, messages, tableset, (creates,mods,deletes,last)) = grab_nonempty_range () in
 
 	sub.last_id <- last;
 	sub.last_timestamp <- timestamp;
@@ -409,8 +409,18 @@ let rec next_new ~__context =
 														reference=objref;
 														snapshot=Some xml } in
 											 ev::acc) createevs messages in
-	
-	XMLRPC.To.array (List.map xmlrpc_of_event message_events)
+
+	let valid_ref_counts =
+		XMLRPC.To.structure
+			(Db_cache_types.TableSet.fold
+				 (fun tablename _ _ table acc ->
+					  (tablename, XMLRPC.To.int
+						   (Db_cache_types.Table.fold
+								(fun r _ _ _ acc -> Int32.add 1l acc) table 0l))::acc)
+				 tableset [])
+	in
+		
+	XMLRPC.To.structure [("events",XMLRPC.To.array (List.map xmlrpc_of_event message_events)); ("valid_ref_counts",valid_ref_counts)]
 
 let next ~__context =
 	assert_subscribed ~__context;
