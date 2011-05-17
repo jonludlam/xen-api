@@ -15,6 +15,7 @@ open Printf
 open Threadext
 open Listext
 open Event_types
+open Stringext
 
 module D=Debug.Debugger(struct let name="xapi_event" end)
 open D
@@ -44,13 +45,13 @@ let event_matches subs ty = List.mem All subs || (List.mem (Class ty) subs)
 
 (** Every session that calls 'register' gets a subscription*)
 type subscription_record = {
-	mutable last_id: int64;           (** last event ID (generation count or internal counter) to sent to this client *)
+	mutable last_id: int64;           (** last event ID sent to this client *)
 	mutable last_timestamp : float;   (** Time at which the last event was sent (for messages) *)
+	mutable last_generation : int64;  (** Generation count of the last event *)
 	mutable cur_id: int64;            (** Most current generation count relevant to the client - only used in new events mechanism *)
 	mutable subs: subscription list;  (** list of all the subscriptions *)
 	m: Mutex.t;                       (** protects access to the mutable fields in this record. *)
 	session: API.ref_session;         (** session which owns this subscription *)
-	is_new: bool;                     (** Use new event logic *)
 	mutable session_invalid: bool;    (** set to true if the associated session has been deleted *)
 }
 
@@ -175,13 +176,9 @@ let get_subscription ~__context =
 	(fun () ->
 	   if Hashtbl.mem subscriptions session then Hashtbl.find subscriptions session
 	   else
-		   let is_new =
-			   let other_config = Db.Session.get_other_config ~__context ~self:session in
-			   List.assoc "version" other_config <> "1.1"
-		   in
-		 let subscription = { last_id = (if is_new then get_current_event_number () else !id); last_timestamp=(Unix.gettimeofday ()); cur_id = 0L; subs = []; m = Mutex.create(); session = session; session_invalid = false; is_new = is_new } in
-		 Hashtbl.replace subscriptions session subscription;
-		 subscription)
+		   let subscription = { last_id = !id; last_timestamp=(Unix.gettimeofday ()); last_generation=0L; cur_id = 0L; subs = []; m = Mutex.create(); session = session; session_invalid = false } in
+		   Hashtbl.replace subscriptions session subscription;
+		   subscription)
 
 (** Raises an exception if the provided session has not already registered for some events *)
 let assert_subscribed ~__context =
@@ -296,11 +293,17 @@ let rec next_old ~__context =
 	if relevant = [] then next_old ~__context
 	else XMLRPC.To.array (List.map xmlrpc_of_event relevant)
 
-let rec next_new ~__context =
+let rec next_new ~__context classes from from_t =
 	info "next_new";
-	assert_subscribed ~__context;
 
+	(* Temporarily create a subscription for the duration of this call *)
+	let subs = List.map subscription_of_string (List.map String.lowercase classes) in
 	let sub = get_subscription ~__context in
+
+	sub.last_timestamp <- from_t;
+	sub.last_generation <- from;
+
+	Mutex.execute sub.m (fun () -> sub.subs <- subs @ sub.subs);
 
 	let all_event_tables =
 		let objs = List.filter (fun x->x.Datamodel_types.gen_events) (Dm_api.objects_of_api Datamodel.all_api) in
@@ -320,23 +323,23 @@ let rec next_new ~__context =
 		debug "Got %d message events: [%s]" (List.length messages) (String.concat "," (List.map (fun (x,_) -> Ref.string_of x)  messages));
 		(timestamp, messages, tableset, List.fold_left
 			(fun acc table ->
-				 Db_cache_types.Table.fold_over_recent (Int64.add sub.last_id 1L)
+				 Db_cache_types.Table.fold_over_recent sub.last_generation
 					 (fun ctime mtime dtime objref (creates,mods,deletes,last) ->
-						  info "last_id=%Ld cur_id=%Ld" sub.last_id sub.cur_id;
+						  info "last_generation=%Ld cur_id=%Ld" sub.last_generation sub.cur_id;
 						  info "ctime: %Ld mtime:%Ld dtime:%Ld objref:%s" ctime mtime dtime objref;
 						  let last = max last (max mtime dtime) in (* mtime guaranteed to always be larger than ctime *)
 						  if dtime > 0L then begin
-							  if ctime > sub.last_id then
+							  if ctime > sub.last_generation then
 								  (creates,mods,deletes,last) (* It was created and destroyed since the last update *)
 							  else
 								  (creates,mods,(table, objref, dtime)::deletes,last) (* It might have been modified, but we can't tell now *)
 						  end else begin
-							  ((if ctime > sub.last_id then (table, objref, ctime)::creates else creates),
-							   (if mtime > sub.last_id then (table, objref, mtime)::mods else mods),
+							  ((if ctime > sub.last_generation then (table, objref, ctime)::creates else creates),
+							   (if mtime > sub.last_generation then (table, objref, mtime)::mods else mods),
 							   deletes, last)
 						  end
 					 ) (fun () -> events_lost := table :: !events_lost) (Db_cache_types.TableSet.find table tableset) acc
-			) ([],[],[],sub.last_id) tables)
+			) ([],[],[],sub.last_generation) tables)
 	in
 
 	let rec grab_nonempty_range () =
@@ -344,9 +347,9 @@ let rec next_new ~__context =
 		if List.length creates = 0 && List.length mods = 0 && List.length deletes = 0 && List.length messages = 0
 		then
 			(
-				sub.last_id <- last; (* Cur_id was bumped, but nothing relevent fell out of the db. Therefore the *)
+				sub.last_generation <- last; (* Cur_id was bumped, but nothing relevent fell out of the db. Therefore the *)
 				sub.last_timestamp <- timestamp;
-				sub.cur_id <- last; (*												last id the client got is equivalent to the current one *)
+				sub.cur_id <- last; (* last id the client got is equivalent to the current one *)
 				wait2 sub last;
 				Thread.delay 0.05;
 				grab_nonempty_range ())
@@ -356,7 +359,7 @@ let rec next_new ~__context =
 
 	let (timestamp, messages, tableset, (creates,mods,deletes,last)) = grab_nonempty_range () in
 
-	sub.last_id <- last;
+	sub.last_generation <- last;
 	sub.last_timestamp <- timestamp;
 
 	let delevs = List.fold_left (fun acc (table, objref, dtime) ->
@@ -419,17 +422,25 @@ let rec next_new ~__context =
 								(fun r _ _ _ acc -> Int32.add 1l acc) table 0l))::acc)
 				 tableset [])
 	in
-		
-	XMLRPC.To.structure [("events",XMLRPC.To.array (List.map xmlrpc_of_event message_events)); ("valid_ref_counts",valid_ref_counts)]
+
+	let session = Context.get_session_id __context in
+
+	on_session_deleted session;
+
+	XMLRPC.To.structure [("events",XMLRPC.To.array (List.map xmlrpc_of_event message_events)); 
+						 ("valid_ref_counts",valid_ref_counts); 
+						 ("last",XMLRPC.To.string (Int64.to_string last)); 
+						 ("last_t",XMLRPC.To.double timestamp);
+						]
 
 let next ~__context =
 	assert_subscribed ~__context;
 
-	let subscription = get_subscription ~__context in
+	next_old ~__context
 
-	if subscription.is_new
-	then next_new ~__context
-	else next_old ~__context
+let from ~__context ~classes ~from ~from_t = 
+	next_new ~__context classes from from_t
+
 
 let get_current_id ~__context = Mutex.execute event_lock (fun () -> !id)
 
