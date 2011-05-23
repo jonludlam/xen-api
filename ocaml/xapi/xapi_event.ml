@@ -39,9 +39,9 @@ type subscription =
 	| Class of string (** subscribe to all events for objects of this class *)
 	| All             (** subscribe to everything *)
 
-let subscription_of_string x = if x = "*" then All else Class x
+let subscription_of_string x = if x = "*" then All else Class (String.lowercase x)
 
-let event_matches subs ty = List.mem All subs || (List.mem (Class ty) subs)
+let event_matches subs ty = List.mem All subs || (List.mem (Class (String.lowercase ty)) subs)
 
 (** Every session that calls 'register' gets a subscription*)
 type subscription_record = {
@@ -320,7 +320,6 @@ let rec next_new ~__context classes from from_t =
 		let tableset = Db_cache_types.Database.tableset (Db_ref.get_database t) in
 		let (timestamp,messages) =
 			if event_matches all_subs "message" then (!message_get_since_for_events) ~__context sub.last_timestamp else (0.0, []) in
-		debug "Got %d message events: [%s]" (List.length messages) (String.concat "," (List.map (fun (x,_) -> Ref.string_of x)  messages));
 		(timestamp, messages, tableset, List.fold_left
 			(fun acc table ->
 				 Db_cache_types.Table.fold_over_recent sub.last_generation
@@ -429,8 +428,7 @@ let rec next_new ~__context classes from from_t =
 
 	XMLRPC.To.structure [("events",XMLRPC.To.array (List.map xmlrpc_of_event message_events)); 
 						 ("valid_ref_counts",valid_ref_counts); 
-						 ("last",XMLRPC.To.string (Int64.to_string last)); 
-						 ("last_t",XMLRPC.To.double timestamp);
+						 ("token",XMLRPC.To.string (Printf.sprintf "%Ld,%f" last timestamp))
 						]
 
 let next ~__context =
@@ -438,7 +436,19 @@ let next ~__context =
 
 	next_old ~__context
 
-let from ~__context ~classes ~from ~from_t = 
+let from ~__context ~classes ~token = 
+	let from, from_t = 
+		try 
+			match String.split ',' token with
+				| [from;from_t] -> 
+					(Int64.of_string from, float_of_string from_t)
+				| [""] -> (0L, 0.1)
+				| _ -> 
+					warn "Bad format passed to Event.from: %s" token;
+					failwith "Error"
+		with _ ->
+			(0L, 0.1)
+	in
 	next_new ~__context classes from from_t
 
 
