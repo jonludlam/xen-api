@@ -30,6 +30,12 @@ Description: The feature daemon for xapi.
  It's only temporarily being installed until a better solution is 
  sorted.
 
+Package: xcp-xe
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: The command line interface for XCP.
+ This package provides xe, the command line interface for XCP and XenServer.
+
 Package: libxenapi-ocaml-dev
 Architecture: any
 Section: ocaml

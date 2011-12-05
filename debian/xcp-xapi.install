@@ -8,7 +8,6 @@
 /usr/lib/xen-common/xapi/bin/xapi-autostart-vms
 /usr/lib/xen-common/xapi/bin/xapi-db-process
 /usr/lib/xen-common/xapi/bin/xapi-wait-init-complete
-/usr/lib/xen-common/xapi/bin/xe
 /usr/lib/xen-common/xapi/bin/xe-backup-metadata
 /usr/lib/xen-common/xapi/bin/xe-edit-bootloader
 /usr/lib/xen-common/xapi/bin/xe-mount-iso-sr

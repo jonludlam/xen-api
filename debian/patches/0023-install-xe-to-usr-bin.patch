@@ -1,0 +1,25 @@
+From: Mike McClurg <mike.mcclurg@citrix.com>
+Date: Wed, 30 Nov 2011 16:11:28 +0000
+Subject: install xe to usr bin
+
+---
+ ocaml/xe-cli/OMakefile |    4 +---
+ 1 files changed, 1 insertions(+), 3 deletions(-)
+
+diff --git a/ocaml/xe-cli/OMakefile b/ocaml/xe-cli/OMakefile
+index 973fa44..aa7f1a1 100644
+--- a/ocaml/xe-cli/OMakefile
++++ b/ocaml/xe-cli/OMakefile
+@@ -99,10 +99,8 @@ clean:
+ 
+ .PHONY: install
+ install:
+-	mkdir -p $(BIN_PATH)
+-	$(IPROG) xe $(BIN_PATH)
+ 	mkdir -p $(DESTDIR)/usr/bin
+-	ln -sf $(BIN_DIR)/xe $(DESTDIR)/usr/bin/xe
++	$(IPROG) xe $(DESTDIR)/usr/bin
+ 	mkdir -p $(DESTDIR)/etc/bash_completion.d
+ 	$(IPROG) bash-completion $(DESTDIR)/etc/bash_completion.d/xe
+ 	mkdir -p $(DEBUGDIST)
+-- 
