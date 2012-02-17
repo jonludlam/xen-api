@@ -68,6 +68,7 @@ module Builtin_impl = struct
 		let create context ~task ~id = assert false
 		let destroy context ~task ~dp = assert false
 		let diagnostics context () = assert false
+		let params context ~task ~sr ~vdi ~dp = assert false
 	end
 
 	module SR = struct
@@ -458,8 +459,12 @@ module Builtin_impl = struct
 	let get_by_name context ~task ~name = assert false
 
 	module Mirror = struct
-		let start context ~task ~sr ~vdi ~url ~dest = assert false
+		let start context ~task ~sr ~vdi ~dp ~url ~dest = assert false
 		let stop context ~task ~sr ~vdi = assert false
+		let active context ~task ~sr = assert false
+		let receive_start context ~task ~sr ~vdi_info ~content_id ~similar = assert false
+		let receive_finalize context ~task ~sr ~content_id = assert false
+		let receive_cancel context ~task ~sr ~content_id = assert false
 	end
 end
 
@@ -616,10 +621,10 @@ let start () =
 	start Xapi_globs.storage_unix_domain_socket Storage_mux.Server.process
 
 
-(** [datapath_of_vbd domid userdevice] returns the name of the datapath which corresponds
-    to device [userdevice] on domain [domid] *)
-let datapath_of_vbd ~domid ~userdevice =
-	Printf.sprintf "vbd/%d/%s" domid userdevice
+(** [datapath_of_vbd domid device] returns the name of the datapath which corresponds
+    to device [device] on domain [domid] *)
+let datapath_of_vbd ~domid ~device =
+	Printf.sprintf "vbd/%d/%s" domid device
 
 let unexpected_result expected x = match x with
 	| Success _ ->
@@ -657,9 +662,9 @@ let of_vbd ~__context ~vbd ~domid =
 	let vdi = Db.VBD.get_VDI ~__context ~self:vbd in
 	let location = Db.VDI.get_location ~__context ~self:vdi in
 	let sr = Db.VDI.get_SR ~__context ~self:vdi in
-	let userdevice = Db.VBD.get_userdevice ~__context ~self:vbd in
+	let device = Db.VBD.get_device ~__context ~self:vbd in
 	let task = Context.get_task_id __context in
-	let dp = datapath_of_vbd ~domid ~userdevice in
+	let dp = datapath_of_vbd ~domid ~device in
 	rpc, (Ref.string_of task), dp, (Db.SR.get_uuid ~__context ~self:sr), location
 
 (** [is_attached __context vbd] returns true if the [vbd] has an attached
