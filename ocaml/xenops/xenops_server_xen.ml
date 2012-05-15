@@ -1486,6 +1486,11 @@ module VBD = struct
 						let k = "sm-data/" ^ k in
 						(k,v)::(List.remove_assoc k acc)) vbd.extra_backend_keys vdi.attach_info.Storage_interface.xenstore_data in
 
+					let extra_backend_keys =
+						("vdi_backend",Jsonrpc.string_of (Vbd.rpc_of_t vbd)) :: extra_backend_keys
+					in
+
+
 					(* Remember the VBD id with the device *)
 					let id = _device_id Device_common.Vbd, id_of vbd in
 					let x = {
