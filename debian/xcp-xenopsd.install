@@ -1,0 +1,4 @@
+/usr/lib/xcp/lib/xenopsd /usr/sbin/
+/usr/lib/xcp/lib/domain_sethandle
+/usr/lib/xcp/bin/xn /usr/bin
+/etc/xenopsd.conf

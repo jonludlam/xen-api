@@ -1,0 +1,12 @@
+Description: Only authenticate the root user
+Origin: vendor, http://patch-tracker.debian.org/patch/series/view/xen-api/1.3.2-10/pam-auth-root-xapi-group
+--- a/scripts/pam.d-xapi
++++ b/scripts/pam.d-xapi
+@@ -1,4 +1,4 @@
+ #%PAM-1.0
+-auth       include     common-auth
+-account    include     common-auth
+-password   include     common-auth
++
++auth sufficient pam_succeed_if.so user ingroup root
++#auth sufficient pam_succeed_if.so user ingroup xapi

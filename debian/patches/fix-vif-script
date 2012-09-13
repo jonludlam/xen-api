@@ -1,0 +1,11 @@
+--- a/scripts/vif
++++ b/scripts/vif
+@@ -297,7 +297,7 @@
+     fi
+     ;;
+ 
+-remove)
++remove|offline)
+     if [ "${TYPE}" = "vif" ] ;then
+         call_hook_script $DOMID "${ACTION}"
+ 		# Unclear whether this is necessary, since netback also does it:

@@ -1,0 +1,13 @@
+Description: Fixes the path to the brctl
+Forwarded: not-needed
+--- a/ocaml/network/network_utils.ml
++++ b/ocaml/network/network_utils.ml
+@@ -28,7 +28,7 @@
+ let ovs_ofctl = "/usr/bin/ovs-ofctl"
+ let ovs_appctl = "/usr/bin/ovs-appctl"
+ let ovs_vlan_bug_workaround = "/usr/sbin/ovs-vlan-bug-workaround"
+-let brctl = "/usr/sbin/brctl"
++let brctl = "/sbin/brctl"
+ let modprobe = "/sbin/modprobe"
+ let ethtool = "/sbin/ethtool"
+ let bonding_dir = "/proc/net/bonding/"

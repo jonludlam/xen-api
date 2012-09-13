@@ -1,0 +1,21 @@
+From: Jon Ludlam <jonathan.ludlam@eu.citrix.com>
+Date: Wed, 23 Nov 2011 21:36:34 +0000
+Subject: dont-statically-link-anything
+
+Don't statically link anything.
+---
+ ocaml/xe-cli/OMakefile |    2 +-
+ ocaml/xenops/OMakefile |    2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+--- a/ocaml/xe-cli/OMakefile
++++ b/ocaml/xe-cli/OMakefile
+@@ -4,7 +4,7 @@
+ 
+ section
+ 	OCAMLINCLUDES += .
+-	OCAMLFLAGS = -dtypes -thread -warn-error F -cclib -static
++	OCAMLFLAGS = -dtypes -thread -warn-error F 
+ 	CLI_FILES = newcli ../xapi/cli_protocol options
+ 	OCamlProgram(xe, $(CLI_FILES))
+ 	OCamlDocProgram(xe, $(CLI_FILES))

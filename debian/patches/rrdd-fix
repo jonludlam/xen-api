@@ -1,0 +1,613 @@
+--- a/ocaml/rrdd/interface/monitor_types.ml
++++ b/ocaml/rrdd/interface/monitor_types.ml
+@@ -40,7 +40,7 @@
+ type vcpu = {
+ 	vcpu_sumcpus: float;
+ 	vcpu_vcpus: float array;
+-	vcpu_rawvcpus: Vcpu_info.t array;
++	vcpu_rawvcpus: vcpuinfo array;
+ 	vcpu_cputime: int64;
+ }
+ 
+@@ -115,7 +115,7 @@
+ 		let ty = String.sub x 0 3 and params = String.sub_to_end x 3 in
+ 		let domid, devid = Scanf.sscanf params "%d.%d" (fun x y -> x,y) in
+ 		let di = Xenctrl.with_intf (fun xc -> Xenctrl.domain_getinfo xc domid) in
+-		let uuid = Uuid.uuid_of_int_array di.Xenctrl.Domain_info.handle |> Uuid.to_string in
++		let uuid = Uuid.uuid_of_int_array di.Xenctrl.handle |> Uuid.to_string in
+ 		let vif = (uuid, string_of_int devid) in
+ 		match ty with
+ 		| "vif" -> Some { pv = true; vif = vif; domid = domid; devid = devid }
+--- a/ocaml/rrdd/rrdd_main.ml
++++ b/ocaml/rrdd/rrdd_main.ml
+@@ -120,7 +120,7 @@
+ let uuid_of_domid domains domid =
+ 	try
+ 		Rrdd_server.string_of_domain_handle
+-			(List.find (fun di -> di.Xenctrl.Domain_info.domid = domid) domains)
++			(List.find (fun di -> di.Xenctrl.domid = domid) domains)
+ 	with Not_found ->
+ 		failwith (Printf.sprintf "Failed to find uuid corresponding to domid: %d" domid)
+ 
+@@ -132,7 +132,7 @@
+  * of the VMs present on this host. *)
+ let update_vcpus xc doms =
+ 	List.fold_left (fun (dss, uuid_domids, domids) dom ->
+-		let open Xenctrl.Domain_info in
++		let open Xenctrl in
+ 		let domid = dom.domid in
+ 		let maxcpus = dom.max_vcpu_id + 1 in
+ 		let uuid = Uuid.string_of_uuid (Uuid.uuid_of_int_array dom.handle) in
+@@ -144,7 +144,7 @@
+ 				ds_make
+ 					~name:(Printf.sprintf "cpu%d" i) ~units:"(fraction)"
+ 					~description:(Printf.sprintf "CPU%d usage" i)
+-					~value:(Rrd.VT_Float ((Int64.to_float vcpuinfo.Xenctrl.Vcpu_info.cputime) /. 1.0e9))
++					~value:(Rrd.VT_Float ((Int64.to_float vcpuinfo.Xenctrl.cputime) /. 1.0e9))
+ 					~ty:Rrd.Derive ~default:true ~min:0.0 ~max:1.0 ())::dss)
+ 		in
+ 
+@@ -192,7 +192,7 @@
+ 	let len = Array.length !physcpus in
+ 	let newinfos = if len = 0 then (
+ 		let physinfo = Xenctrl.physinfo xc in
+-		let pcpus = physinfo.Xenctrl.Phys_info.nr_cpus in
++		let pcpus = physinfo.Xenctrl.nr_cpus in
+ 		physcpus := if pcpus > 0 then (Array.make pcpus 0L) else [| |];
+ 		Xenctrl.pcpu_info xc pcpus
+ 	) else (
+@@ -216,7 +216,7 @@
+ 
+ let update_memory xc doms =
+ 	List.fold_left (fun acc dom ->
+-		let open Xenctrl.Domain_info in
++		let open Xenctrl in
+ 		let domid = dom.domid in
+ 		let kib = Xenctrl.pages_to_kib (Int64.of_nativeint dom.total_memory_pages) in
+ 		let memory = Int64.mul kib 1024L in
+@@ -414,8 +414,8 @@
+ 
+ let read_mem_metrics xc =
+ 	let physinfo = Xenctrl.physinfo xc in
+-	let total_kib = Xenctrl.pages_to_kib (Int64.of_nativeint physinfo.Xenctrl.Phys_info.total_pages)
+-	and free_kib = Xenctrl.pages_to_kib (Int64.of_nativeint physinfo.Xenctrl.Phys_info.free_pages) in
++	let total_kib = Xenctrl.pages_to_kib (Int64.of_nativeint physinfo.Xenctrl.total_pages)
++	and free_kib = Xenctrl.pages_to_kib (Int64.of_nativeint physinfo.Xenctrl.free_pages) in
+ 	let gcstat =
+ 		if !Xapi_globs.xapi_gc_debug then (
+ 			if !previous_oldness > 5 then (
+@@ -541,7 +541,7 @@
+ 	let timestamp = Unix.gettimeofday () in
+ 	let my_rebooting_vms =
+ 		StringSet.fold (fun uuid acc -> uuid::acc) !rebooting_vms [] in
+-	let open Xenctrl.Domain_info in
++	let open Xenctrl in
+ 	let uuid_of_domain d =
+ 		Uuid.to_string (Uuid.uuid_of_int_array (d.handle)) in
+ 	let domain_paused d = d.paused in
+--- a/ocaml/rrdd/rrdd_server.ml
++++ b/ocaml/rrdd/rrdd_server.ml
+@@ -425,7 +425,7 @@
+ 	use_min_max := value
+ 
+ let string_of_domain_handle dh =
+-	Uuid.string_of_uuid (Uuid.uuid_of_int_array dh.Xenctrl.Domain_info.handle)
++	Uuid.string_of_uuid (Uuid.uuid_of_int_array dh.Xenctrl.handle)
+ 
+ let update_vm_memory_target _ ~(domid : int) ~(target : int64) : unit =
+ 	Mutex.execute memory_targets_m
+--- a/ocaml/xapi/cancel_tests.ml
++++ b/ocaml/xapi/cancel_tests.ml
+@@ -288,10 +288,10 @@
+ 				with _ -> f None
+ 			) in
+ 	let running_domain () = domain (function
+-		| Some di -> not(di.Xenctrl.Domain_info.paused) && not(di.Xenctrl.Domain_info.shutdown)
++		| Some di -> not(di.Xenctrl.paused) && not(di.Xenctrl.shutdown)
+ 		| None -> false) in
+ 	let paused_domain () = domain (function
+-		| Some di -> di.Xenctrl.Domain_info.paused && not(di.Xenctrl.Domain_info.shutdown)
++		| Some di -> di.Xenctrl.paused && not(di.Xenctrl.shutdown)
+ 		| None -> false) in
+ 	let missing_domain () = domain (function
+ 		| Some _ -> false
+--- a/ocaml/xapi/monitor_dbcalls.ml
++++ b/ocaml/xapi/monitor_dbcalls.ml
+@@ -73,8 +73,8 @@
+ 		let kib = Xenctrl.pages_to_kib (Int64.of_nativeint pages) in
+ 		Int64.shift_left kib 10
+ 	in
+-	let free_bytes = bytes_of_pages physinfo.Xenctrl.Phys_info.free_pages in
+-	let total_bytes = bytes_of_pages physinfo.Xenctrl.Phys_info.total_pages in
++	let free_bytes = bytes_of_pages physinfo.Xenctrl.free_pages in
++	let total_bytes = bytes_of_pages physinfo.Xenctrl.total_pages in
+ 	Mutex.execute host_memory_m (fun _ ->
+ 		let host_memory_changed =
+ 			!host_memory_free_cached <> free_bytes ||
+@@ -88,7 +88,7 @@
+ let get_vm_memory_changes xc =
+ 	let domains = Xenctrl.domain_getinfolist xc 0 in
+ 	let process_vm dom =
+-		let open Xenctrl.Domain_info in
++		let open Xenctrl in
+ 		let uuid = Uuid.string_of_uuid (Uuid.uuid_of_int_array dom.handle) in
+ 		let kib = Xenctrl.pages_to_kib (Int64.of_nativeint dom.total_memory_pages) in
+ 		let memory = Int64.mul kib 1024L in
+--- a/ocaml/xapi/vmopshelpers.ml
++++ b/ocaml/xapi/vmopshelpers.ml
+@@ -31,4 +31,4 @@
+ 	Xenctrl.with_intf (fun xc -> with_xs (fun xs -> f xc xs))
+ 
+ let get_uuid ~xc domid =
+-	Uuid.uuid_of_int_array (Xenctrl.domain_getinfo xc domid).Xenctrl.Domain_info.handle
++	Uuid.uuid_of_int_array (Xenctrl.domain_getinfo xc domid).Xenctrl.handle
+--- a/ocaml/xapi/xapi.ml
++++ b/ocaml/xapi/xapi.ml
+@@ -512,11 +512,11 @@
+ let calculate_boot_time_host_free_memory () =
+ 	let ( + ) = Nativeint.add in
+ 	let host_info = with_xc (fun xc -> Xenctrl.physinfo xc) in
+-	let open Xenctrl.Phys_info in
++	let open Xenctrl in
+ 	let host_free_pages = host_info.free_pages in
+ 	let host_scrub_pages = host_info.scrub_pages in
+ 	let domain0_info = with_xc (fun xc -> Xenctrl.domain_getinfo xc 0) in
+-	let domain0_total_pages = domain0_info.Xenctrl.Domain_info.total_memory_pages in
++	let domain0_total_pages = domain0_info.Xenctrl.total_memory_pages in
+ 	let boot_time_host_free_pages =
+ 		host_free_pages + host_scrub_pages + domain0_total_pages in
+ 	let boot_time_host_free_kib =
+--- a/ocaml/xapi/xapi_xenops.ml
++++ b/ocaml/xapi/xapi_xenops.ml
+@@ -1224,7 +1224,7 @@
+ 
+ let manage_dom0 dbg =
+ 	(* Tell xenopsd to manage domain 0 *)
+-	let open Xenctrl.Domain_info in
++	let open Xenctrl in
+ 	let uuid = Xapi_inventory.lookup Xapi_inventory._control_domain_uuid in
+ 	let di = Vmopshelpers.with_xc (fun xc -> Xenctrl.domain_getinfo xc 0) in
+ 	let memory_actual_bytes = Xenctrl.pages_to_kib Int64.(mul (of_nativeint di.total_memory_pages) 1024L) in
+--- a/ocaml/xenops/device.ml
++++ b/ocaml/xenops/device.ml
+@@ -1259,7 +1259,7 @@
+ 	let devs = enumerate_devs ~xs x in
+ 	Xenctrl.with_intf (fun xc ->
+ 		let hvm =
+-			try (Xenctrl.domain_getinfo xc x.frontend.domid).Xenctrl.Domain_info.hvm_guest
++			try (Xenctrl.domain_getinfo xc x.frontend.domid).Xenctrl.hvm_guest
+ 			with _ -> false
+ 			in
+ 		try release ~xc ~xs ~hvm devs x.frontend.domid x.frontend.devid
+--- a/ocaml/xenops/domain.ml
++++ b/ocaml/xenops/domain.ml
+@@ -111,13 +111,13 @@
+ 	| _     -> Arch_native
+ 
+ let get_uuid ~xc domid =
+-	Uuid.uuid_of_int_array (Xenctrl.domain_getinfo xc domid).Xenctrl.Domain_info.handle
++	Uuid.uuid_of_int_array (Xenctrl.domain_getinfo xc domid).Xenctrl.handle
+ 
+ let wait_xen_free_mem ~xc ?(maximum_wait_time_seconds=64) required_memory_kib : bool =
+ 	let open Memory in
+ 	let rec wait accumulated_wait_time_seconds =
+ 		let host_info = Xenctrl.physinfo xc in
+-		let open Xenctrl.Phys_info in
++		let open Xenctrl in
+ 		let free_memory_kib =
+ 			kib_of_pages (Int64.of_nativeint host_info.free_pages) in
+ 		let scrub_memory_kib =
+@@ -304,8 +304,8 @@
+ let shutdown_wait_for_ack (t: Xenops_task.t) ?(timeout=60.) ~xc ~xs domid req =
+ 	let di = Xenctrl.domain_getinfo xc domid in
+ 	let uuid = get_uuid ~xc domid in
+-	if di.Xenctrl.Domain_info.hvm_guest then begin
+-		if not (Xenctrl.hvm_check_pvdriver xc domid)
++	if di.Xenctrl.hvm_guest then begin
++		if not true (* - assume we've got drivers! (Xenctrl.hvm_check_pvdriver xc domid)*)
+ 		then begin
+ 			debug "VM = %s; domid = %d; HVM guest without PV drivers: not expecting any acknowledgement" (Uuid.to_string uuid) domid;
+ 			Xenctrl.domain_shutdown xc domid (shutdown_to_xc_shutdown req)
+--- a/ocaml/xenops/list_domains.ml
++++ b/ocaml/xenops/list_domains.ml
+@@ -22,7 +22,7 @@
+ 
+ let xc_handle = Xenctrl.interface_open() 
+ 
+-let hashtbl_of_domaininfo (x : Xenctrl.Domain_info.t) : (string, string) Hashtbl.t =
++let hashtbl_of_domaininfo x : (string, string) Hashtbl.t =
+   let table = Hashtbl.create 10 in
+ 
+   let pages_to_string_bytes    x = Int64.to_string (Memory.bytes_of_pages    (Int64.of_nativeint (x))) in
+@@ -30,7 +30,7 @@
+   let pages_to_string_pages    x = Int64.to_string (                         (Int64.of_nativeint (x))) in
+ 
+   let int = string_of_int and int64 = Int64.to_string and int32 = Int32.to_string in
+-  let open Xenctrl.Domain_info in
++  let open Xenctrl in
+   Hashtbl.add table "id" (int x.domid);
+   let state = let bool ch = function true -> ch | _ -> " " in
+   (bool "D" x.dying) ^ (bool "S" x.shutdown) ^
+--- a/ocaml/xenops/memory_breakdown.ml
++++ b/ocaml/xenops/memory_breakdown.ml
+@@ -99,11 +99,11 @@
+ let host_time h =
+ 	Date.to_string (Date.of_float (Unix.gettimeofday ()))
+ let host_total_bytes h = Int64.to_string
+-	(Memory.bytes_of_pages (Int64.of_nativeint h.Xenctrl.Phys_info.total_pages))
++	(Memory.bytes_of_pages (Int64.of_nativeint h.Xenctrl.total_pages))
+ let host_free_bytes h = Int64.to_string
+-	(Memory.bytes_of_pages (Int64.of_nativeint h.Xenctrl.Phys_info.free_pages))
++	(Memory.bytes_of_pages (Int64.of_nativeint h.Xenctrl.free_pages))
+ let host_scrub_bytes h = Int64.to_string
+-	(Memory.bytes_of_pages (Int64.of_nativeint h.Xenctrl.Phys_info.scrub_pages))
++	(Memory.bytes_of_pages (Int64.of_nativeint h.Xenctrl.scrub_pages))
+ 
+ let host_fields = [
+ 		"host_time"       , host_time       ;
+@@ -118,13 +118,13 @@
+ (** {2 Guest fields} *)
+ 
+ let guest_id xc xs g =
+-	Uuid.to_string (Uuid.uuid_of_int_array (g.Xenctrl.Domain_info.handle))
++	Uuid.to_string (Uuid.uuid_of_int_array (g.Xenctrl.handle))
+ let guest_domain_id xc xs g = string_of_int
+-	(g.Xenctrl.Domain_info.domid)
++	(g.Xenctrl.domid)
+ let guest_total_bytes xc xs g = Int64.to_string
+-	(Memory.bytes_of_pages (Int64.of_nativeint g.Xenctrl.Domain_info.total_memory_pages))
++	(Memory.bytes_of_pages (Int64.of_nativeint g.Xenctrl.total_memory_pages))
+ let guest_maximum_bytes xc xs g = Int64.to_string
+-	(Memory.bytes_of_pages (Int64.of_nativeint g.Xenctrl.Domain_info.max_memory_pages))
++	(Memory.bytes_of_pages (Int64.of_nativeint g.Xenctrl.max_memory_pages))
+ let guest_target_bytes xc xs g =
+ 	xs_read_bytes_from_kib_key xs (memory_target_path (guest_domain_id xc xs g))
+ let guest_offset_bytes xc xs g =
+@@ -134,7 +134,7 @@
+ let guest_uncooperative xc xs g = string_of_bool
+ 	(xs_exists xs (is_uncooperative_path (guest_domain_id xc xs g)))
+ let guest_shadow_bytes xc xs g = Int64.to_string (
+-	try Memory.bytes_of_mib (Int64.of_int (Xenctrl.shadow_allocation_get xc g.Xenctrl.Domain_info.domid))
++	try Memory.bytes_of_mib (Int64.of_int (Xenctrl.shadow_allocation_get xc g.Xenctrl.domid))
+ 	with _ -> 0L)
+ 
+ let guest_fields = [
+@@ -174,7 +174,7 @@
+ 
+ (** Prints memory field values to the console. *)
+ let print_memory_field_values xc xs =
+-	let open Xenctrl.Domain_info in
++	let open Xenctrl in
+ 	let host = Xenctrl.physinfo xc in
+ 	let control_domain_info = Xenctrl.domain_getinfo xc 0 in
+ 	let control_domain_id = control_domain_info.handle in
+--- a/ocaml/xenops/squeeze_xen.ml
++++ b/ocaml/xenops/squeeze_xen.ml
+@@ -74,7 +74,7 @@
+ 	  then Some (Hashtbl.find cache domid)
+ 	  else
+ 		  try
+-			  let open Xenctrl.Domain_info in
++			  let open Xenctrl in
+ 			  let di = Xenctrl.domain_getinfo xc domid in
+ 			  let maxmem = Xenctrl.pages_to_kib (Int64.of_nativeint di.max_memory_pages) in
+ 			  let d = { path = xs.Xs.getdomainpath domid;
+@@ -110,7 +110,7 @@
+ 
+ 			  let look_for_different_domains () =
+ 				  let list_domains xc =
+-					  let open Xenctrl.Domain_info in
++					  let open Xenctrl in
+ 					  let dis = Xenctrl.domain_getinfolist xc 0 in
+ 					  List.fold_left (fun set x -> if not x.shutdown then IntSet.add x.domid set else set) IntSet.empty dis in
+ 				  let existing = list_domains xc in
+@@ -348,7 +348,7 @@
+ let make_host ~verbose ~xc ~xs =
+ 	(* Wait for any scrubbing so that we don't end up with no immediately usable pages --
+ 	   this might cause something else to fail (eg domain builder?) *)
+-	while Int64.div ((Xenctrl.physinfo xc).Xenctrl.Phys_info.scrub_pages |> Int64.of_nativeint) 1024L <> 0L do
++	while Int64.div ((Xenctrl.physinfo xc).Xenctrl.scrub_pages |> Int64.of_nativeint) 1024L <> 0L do
+ 		ignore(Unix.select [] [] [] 0.25)
+ 	done;
+ 
+@@ -368,7 +368,7 @@
+ 	   the call to domain_getinfolist is not atomic but comprised of many hypercall invocations. *)
+ 
+ 	(* We are excluding dom0, so it will never be ballooned down. *)
+-	let open Xenctrl.Domain_info in
++	let open Xenctrl in
+ 	let domain_infolist = List.filter (fun di -> di.domid > 0) (Xenctrl.domain_getinfolist xc 0) in
+ 	(*
+ 		For the host free memory we sum the free pages and the pages needing
+@@ -376,9 +376,9 @@
+ 		is slow.
+ 	*)
+ 	let physinfo = Xenctrl.physinfo xc in
+-	let free_pages_kib = Xenctrl.pages_to_kib (Int64.of_nativeint physinfo.Xenctrl.Phys_info.free_pages)
+-	and scrub_pages_kib = Xenctrl.pages_to_kib (Int64.of_nativeint physinfo.Xenctrl.Phys_info.scrub_pages)
+-	and total_pages_kib = Xenctrl.pages_to_kib (Int64.of_nativeint physinfo.Xenctrl.Phys_info.total_pages) in
++	let free_pages_kib = Xenctrl.pages_to_kib (Int64.of_nativeint physinfo.Xenctrl.free_pages)
++	and scrub_pages_kib = Xenctrl.pages_to_kib (Int64.of_nativeint physinfo.Xenctrl.scrub_pages)
++	and total_pages_kib = Xenctrl.pages_to_kib (Int64.of_nativeint physinfo.Xenctrl.total_pages) in
+ 	let free_mem_kib = free_pages_kib +* scrub_pages_kib in
+ 
+ 	let cnx = xc, xs in
+--- a/ocaml/xenops/xenguestHelper.ml
++++ b/ocaml/xenops/xenguestHelper.ml
+@@ -156,7 +156,7 @@
+ 			let open Int64 in
+ 			let open Xenctrl in
+ 			let p = Xenctrl.physinfo xc in
+-			let open Xenctrl.Phys_info in
++			let open Xenctrl in
+ 			error "Memory F %Ld KiB S %Ld KiB T %Ld MiB"
+ 				(p.free_pages |> of_nativeint |> kib_of_pages)
+ 				(p.scrub_pages |> of_nativeint |> kib_of_pages)
+--- a/ocaml/xenops/xenops.ml
++++ b/ocaml/xenops/xenops.ml
+@@ -27,7 +27,7 @@
+ 	printf "%s\n" s
+ 
+ let print_xen_physinfo ~xc =
+-	let open Xenctrl.Phys_info in
++	let open Xenctrl in
+ 	let physinfo = Xenctrl.physinfo xc in
+ 	let totalmib = Xenctrl.pages_to_mib (Int64.of_nativeint physinfo.total_pages)
+ 	and freemib = Xenctrl.pages_to_mib (Int64.of_nativeint physinfo.free_pages)
+@@ -44,7 +44,7 @@
+ 
+ let print_pcpus_info ~xc =
+ 	let physinfo = Xenctrl.physinfo xc in
+-	let infos = Xenctrl.pcpu_info xc (physinfo.Xenctrl.Phys_info.nr_cpus) in
++	let infos = Xenctrl.pcpu_info xc (physinfo.Xenctrl.nr_cpus) in
+ 	Array.iteri (fun i info -> printf "cpu: %d  usage: %Ld\n" i info) infos
+ 
+ let debugkeys ~xc args =
+@@ -55,7 +55,7 @@
+ 	) args
+ 
+ let is_hvm ~xc domid =
+-	(Xenctrl.domain_getinfo xc domid).Xenctrl.Domain_info.hvm_guest
++	(Xenctrl.domain_getinfo xc domid).Xenctrl.hvm_guest
+ 
+ let create_domain ~xc ~xs ~hvm =
+ 	let uuid = Uuid.make_uuid () in
+@@ -132,7 +132,7 @@
+ let domain_get_uuid ~xc ~domid =
+ 	try
+ 		let h = Xenctrl.domain_getinfo xc domid in
+-		let uuid = Uuid.to_string (Uuid.uuid_of_int_array h.Xenctrl.Domain_info.handle) in
++		let uuid = Uuid.to_string (Uuid.uuid_of_int_array h.Xenctrl.handle) in
+ 		printf "%s\n" uuid
+ 	with _ ->
+ 		()
+@@ -151,8 +151,8 @@
+ 		else
+ 			[ "id"; "state"; "cpu_time"; "uuid" ]
+ 		in
+-	let open Xenctrl.Domain_info in
+-	let sl_of_domaininfo (x : Xenctrl.Domain_info.t) : string list =
++	let open Xenctrl in
++	let sl_of_domaininfo x : string list =
+ 		let page_to_mib pages =
+ 			Nativeint.to_string (Nativeint.div pages (Nativeint.of_int 256)) in
+ 		let int = string_of_int and int64 = Int64.to_string and int32 = Int32.to_string in
+@@ -249,7 +249,7 @@
+ 	let of_device (d: device) : string list =
+ 		device_state_to_sl (stat ~xs d) in
+ 	let l = Xenctrl.domain_getinfolist xc 0 in
+-	let domids = List.map (fun x -> x.Xenctrl.Domain_info.domid) l in
++	let domids = List.map (fun x -> x.Xenctrl.domid) l in
+ 	let devices =
+ 		Listext.List.setify (
+ 			List.concat (
+@@ -366,7 +366,7 @@
+ 	Domain.del_irq ~xc domid irq
+ 
+ let sched_domain ~xc ~domid ~weight ~cap =
+-	let open Xenctrl.Sched_control in
++	let open Xenctrl in
+ 	if Xenctrl.sched_id xc <> 5 then
+ 		failwith "not using credit scheduler";
+ 	match weight, cap with
+@@ -384,7 +384,7 @@
+ 	| None, None         -> ()
+ 
+ let sched_domain_get ~xc ~domid =
+-	let open Xenctrl.Sched_control in
++	let open Xenctrl in
+ 	if Xenctrl.sched_id xc <> 5 then
+ 		failwith "not using credit scheduler";
+ 	let params = Xenctrl.sched_credit_domain_get xc domid in
+@@ -676,7 +676,7 @@
+                boot, ioport_start, ioport_end, iomem_start, iomem_end, irq,
+                slot, timeout, otherargs, allcommands = do_cmd_parsing subcmd init_pos in
+ 
+-	let is_domain_hvm xc domid = (Xenctrl.domain_getinfo xc domid).Xenctrl.Domain_info.hvm_guest in
++	let is_domain_hvm xc domid = (Xenctrl.domain_getinfo xc domid).Xenctrl.hvm_guest in
+ 
+ 	(* Aliases *)
+ 	let target_kib = max_kib in
+--- a/ocaml/xenops/xenops_server_xen.ml
++++ b/ocaml/xenops/xenops_server_xen.ml
+@@ -112,7 +112,7 @@
+ let this_domid ~xs = int_of_string (xs.Xs.read "domid")
+ 
+ let uuid_of_vm vm = Uuid.uuid_of_string vm.Vm.id
+-let uuid_of_di di = Uuid.uuid_of_int_array di.Xenctrl.Domain_info.handle
++let uuid_of_di di = Uuid.uuid_of_int_array di.Xenctrl.handle
+ 
+ (* During a live migrate, there will be multiple domains with the same uuid.
+    The convention is: we construct things on the newest domain (e.g. VBD.plug)
+@@ -125,7 +125,7 @@
+ 	| Expect_only_one
+ 
+ let di_of_uuid ~xc ~xs domain_selection uuid =
+-	let open Xenctrl.Domain_info in
++	let open Xenctrl in
+ 	let uuid' = Uuid.string_of_uuid uuid in
+ 	let all = Xenctrl.domain_getinfolist xc 0 in
+ 	let possible = List.filter (fun x -> uuid_of_di x = uuid) all in
+@@ -499,7 +499,7 @@
+ 		with_xc_and_xs
+ 			(fun xc xs ->
+ 				let pages_per_mib = 256L in
+-				Int64.(div ((Xenctrl.physinfo xc).Xenctrl.Phys_info.total_pages |> of_nativeint) pages_per_mib)
++				Int64.(div ((Xenctrl.physinfo xc).Xenctrl.total_pages |> of_nativeint) pages_per_mib)
+ 			)
+ 	let send_debug_keys keys =
+ 		with_xc_and_xs
+@@ -717,7 +717,7 @@
+ 		with Does_not_exist("domain", _) ->
+ 			debug "Domain for VM %s does not exist: ignoring" vm.Vm.id
+ 
+-	open Xenctrl.Domain_info
++	open Xenctrl
+ 
+ 	let add vm =
+ 		with_xc_and_xs
+@@ -1179,9 +1179,9 @@
+ 					(fun fd ->
+ 						Domain.suspend task ~xc ~xs ~hvm ~progress_callback ~qemu_domid domid fd flags'
+ 							(fun () ->
+-								if not(request_shutdown task vm Suspend 30.)
++								if not(request_shutdown task vm Xenops_server_plugin.Suspend 30.)
+ 								then raise (Failed_to_acknowledge_shutdown_request);
+-								if not(wait_shutdown task vm Suspend 1200.)
++								if not(wait_shutdown task vm Xenops_server_plugin.Suspend 1200.)
+ 								then raise (Failed_to_shutdown(vm.Vm.id, 1200.));
+ 							);
+ 						(* Record the final memory usage of the domain so we know how
+@@ -1350,7 +1350,7 @@
+ 								| None -> 0.
+ 							end;
+ 							shadow_multiplier_target = shadow_multiplier_target;
+-							hvm = di.Xenctrl.Domain_info.hvm_guest;
++							hvm = di.Xenctrl.hvm_guest;
+ 						}
+ 			)
+ 
+@@ -1417,7 +1417,7 @@
+ 			let frontend_di = match frontend |> Uuid.uuid_of_string |> di_of_uuid ~xc ~xs domain_selection with
+ 				| None -> raise (Does_not_exist ("domain", frontend))
+ 				| Some x -> x in
+-			let open Xenctrl.Domain_info in
++			let open Xenctrl in
+ 			f xc xs frontend_di.domid frontend_di.hvm_guest
+ 		)
+ 
+@@ -1610,7 +1610,7 @@
+ 				end
+ 			) Newest vm
+ 
+-	open Xenctrl.Domain_info
++	open Xenctrl
+ 
+ 	let unplug task vm vbd force =
+ 		let vm_t = DB.read vm in
+@@ -1996,7 +1996,7 @@
+                 ignore (run (Filename.concat Fhs.libexecdir "setup-vif-rules") ["vif"; domid; devid; "filter"]);
+                 (* Update rules for the tap device if the VM has booted HVM with no PV drivers. *)
+ 				let di = Xenctrl.domain_getinfo xc device.frontend.domid in
+-				if di.Xenctrl.Domain_info.hvm_guest
++				if di.Xenctrl.hvm_guest
+ 				then ignore (run (Filename.concat Fhs.libexecdir "setup-vif-rules") ["tap"; domid; devid; "filter"])
+ 			)
+ 
+@@ -2063,7 +2063,7 @@
+ 
+ let list_domains xc =
+ 	let dis = Xenctrl.domain_getinfolist xc 0 in
+-	let ids = List.map (fun x -> x.Xenctrl.Domain_info.domid) dis in
++	let ids = List.map (fun x -> x.Xenctrl.domid) dis in
+ 	List.fold_left (fun map (k, v) -> IntMap.add k v map) IntMap.empty (List.combine ids dis)
+ 
+ 
+@@ -2072,7 +2072,7 @@
+ 	| Some _, None -> true
+ 	| None, None -> false
+ 	| Some a', Some b' ->
+-		let open Xenctrl.Domain_info in
++		let open Xenctrl in
+ 		a'.shutdown <> b'.shutdown
+ 		|| (a'.shutdown && b'.shutdown && (a'.shutdown_code <> b'.shutdown_code))
+ 
+@@ -2169,7 +2169,7 @@
+ 				let different = list_different_domains !domains domains' in
+ 				List.iter
+ 					(fun domid ->
+-						let open Xenctrl.Domain_info in
++						let open Xenctrl in
+ 						debug "Domain %d may have changed state" domid;
+ 						(* The uuid is either in the new domains map or the old map. *)
+ 						let di = IntMap.find domid (if IntMap.mem domid domains' then domains' else !domains) in
+@@ -2214,7 +2214,7 @@
+ 			xs.Xs.watch _releaseDomain "";
+ 			look_for_different_domains ();
+ 
+-			let open Xenctrl.Domain_info in
++			let open Xenctrl in
+ 
+ 			let fire_event_on_vm domid =
+ 				let d = int_of_string domid in
+@@ -2301,7 +2301,7 @@
+ 	()
+ 
+ module DEBUG = struct
+-	open Xenctrl.Domain_info
++	open Xenctrl
+ 
+ 	let trigger cmd args = match cmd, args with
+ 		| "reboot", [ k ] ->
+--- a/ocaml/xapi/create_misc.ml
++++ b/ocaml/xapi/create_misc.ml
+@@ -47,7 +47,7 @@
+ 		let xc = Xenctrl.interface_open () in
+ 		let v = Xenctrl.version xc in
+ 		Xenctrl.interface_close xc;
+-		let open Xenctrl.Version in
++		let open Xenctrl in
+ 		Printf.sprintf "%d.%d%s" v.major v.minor v.extra
+ 	and linux_verstring =
+ 		let verstring = ref "" in
+@@ -397,7 +397,7 @@
+ 		let xc = Xenctrl.interface_open () in
+ 		let p = Xenctrl.physinfo xc in
+ 		Xenctrl.interface_close xc;
+-		p.Xenctrl.Phys_info.nr_cpus
++		p.Xenctrl.nr_cpus
+ 		in
+ 	let trim_end s =
+         	let i = ref (String.length s - 1) in
+--- a/ocaml/xapi/helpers.ml
++++ b/ocaml/xapi/helpers.ml
+@@ -429,7 +429,7 @@
+ let domid_of_vm ~__context ~self =
+   let uuid = Uuid.uuid_of_string (Db.VM.get_uuid ~__context ~self) in
+   let all = Xenctrl.with_intf (fun xc -> Xenctrl.domain_getinfolist xc 0) in
+-  let open Xenctrl.Domain_info in
++  let open Xenctrl in
+   let uuid_to_domid = List.map (fun di -> Uuid.uuid_of_int_array di.handle, di.domid) all in
+   if List.mem_assoc uuid uuid_to_domid
+   then List.assoc uuid uuid_to_domid
+--- a/ocaml/xenops/memory_summary.ml
++++ b/ocaml/xenops/memory_summary.ml
+@@ -35,15 +35,16 @@
+ 	  if !delay > 0. then ignore(Unix.select [] [] [] !delay);
+ 	  flush stdout;
+ 
++	  let open Xenctrl in
++
+ 	  let physinfo = Xenctrl.physinfo xc in
+ 	  let one_page = 4096L in
+-	  let open Xenctrl.Phys_info in
+ 	  let total_pages = Int64.of_nativeint physinfo.total_pages in
+ 	  let free_pages = Int64.of_nativeint physinfo.free_pages +*
+ 	    (Int64.of_nativeint physinfo.scrub_pages) in
+ 	  
+ 	  let domains = Xenctrl.domain_getinfolist xc 0 in
+-	  let open Xenctrl.Domain_info in
++	  let open Xenctrl in
+ 	  let domains = List.map
+ 	    (fun di ->
+ 	       di.domid,

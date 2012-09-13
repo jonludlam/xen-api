@@ -1,0 +1,44 @@
+From: Jon Ludlam <jonathan.ludlam@eu.citrix.com>
+Date: Wed, 23 Nov 2011 21:36:13 +0000
+Subject: new-ocaml-layout
+
+---
+ Makefile                          |    3 +++
+ ocaml/idl/OMakefile               |    2 +-
+ ocaml/idl/ocaml_backend/OMakefile |    2 +-
+ 3 files changed, 5 insertions(+), 2 deletions(-)
+
+--- a/Makefile
++++ b/Makefile
+@@ -7,6 +7,9 @@
+ MY_OBJ_DIR ?= $(CURDIR)/obj
+ REPO ?= $(CURDIR)
+ 
++OCAMLPATH=/usr/lib/xen-4.1/lib/ocaml:/usr/lib/ocaml/xcp
++export OCAMLPATH
++
+ RPM_SPECSDIR?=$(shell rpm --eval='%_specdir')
+ RPM_SRPMSDIR?=$(shell rpm --eval='%_srcrpmdir')
+ RPM_SOURCESDIR?=$(shell rpm --eval='%_sourcedir')
+--- a/ocaml/idl/OMakefile
++++ b/ocaml/idl/OMakefile
+@@ -103,7 +103,7 @@
+ 	sed 's/@VERSION@/$(PRODUCT_VERSION)/g' < $< > $@
+ 
+ if $(defined-env DESTDIR)
+-	INSTALL_PATH = $(DESTDIR)/$(shell ocamlc -where)
++	INSTALL_PATH = $(DESTDIR)/$(shell ocamlc -where)/xcp
+ 	export
+ else
+ 	INSTALL_PATH = $(shell ocamlfind printconf destdir)
+--- a/ocaml/idl/ocaml_backend/OMakefile
++++ b/ocaml/idl/ocaml_backend/OMakefile
+@@ -155,7 +155,7 @@
+ 	sed 's/@VERSION@/$(PRODUCT_VERSION)/g' < $< > $@
+ 
+ if $(defined-env DESTDIR)
+-	INSTALL_PATH = $(DESTDIR)/$(shell ocamlc -where)
++	INSTALL_PATH = $(DESTDIR)/$(shell ocamlc -where)/xcp
+ 	export
+ else
+ 	INSTALL_PATH = $(shell ocamlfind printconf destdir)

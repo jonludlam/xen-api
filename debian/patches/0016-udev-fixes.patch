@@ -1,0 +1,55 @@
+From: Jon Ludlam <jonathan.ludlam@eu.citrix.com>
+Date: Fri, 7 Oct 2011 14:44:47 +0100
+Subject: udev-fixes
+
+---
+ scripts/OMakefile      |    3 ++-
+ scripts/block-frontend |    6 +++---
+ scripts/vif            |    6 +++---
+ 3 files changed, 8 insertions(+), 7 deletions(-)
+
+--- a/scripts/OMakefile
++++ b/scripts/OMakefile
+@@ -6,12 +6,11 @@
+ 
+ noarch-install:
+ 	mkdir -p $(DESTDIR)/etc/udev                    ### FHS_FIXME
+-	$(IPROG) xen-backend.rules $(DESTDIR)/etc/udev  ### FHS_FIXME
+-	$(IPROG) xen-frontend.rules $(DESTDIR)/etc/udev ### FHS_FIXME
+-	mkdir -p $(DESTDIR)/etc/udev/rules.d ### FHS_FIXME
++	$(IPROG) xen-backend.rules $(DESTDIR)/lib/udev  ### FHS_FIXME
++	$(IPROG) xen-frontend.rules $(DESTDIR)/lib/udev ### FHS_FIXME
++	mkdir -p $(DESTDIR)/lib/udev/rules.d ### FHS_FIXME
+ 	sh -c \
+-	'cd $(DESTDIR)/etc/udev/rules.d; \
+-	ln -sf ../xen-backend.rules; \
++	'cd $(DESTDIR)/lib/udev/rules.d; \
+ 	ln -sf ../xen-frontend.rules'
+ 	mkdir -p $(DESTDIR)$(SCRIPTSDIR)
+ 	$(IPROG) block-frontend vif tap block $(DESTDIR)$(SCRIPTSDIR)
+--- a/scripts/vif
++++ b/scripts/vif
+@@ -1,4 +1,4 @@
+-#!/bin/sh
++#!/bin/bash
+ 
+ # Copyright (C) 2008,2009 Citrix Systems, Inc.
+ #
+@@ -20,7 +20,7 @@
+ 
+ # Keep other-config/ keys in sync with device.ml:vif_udev_keys
+ 
+-BRCTL="/usr/sbin/brctl"
++BRCTL="/sbin/brctl"
+ IP="/sbin/ip"
+ 
+ vsctl="/usr/bin/ovs-vsctl"
+@@ -225,7 +225,7 @@
+ if [[ $# -lt 2 ]]; then
+     TYPE=vif
+ else
+-    TYPE=$2
++    TYPE=`echo $2 | cut -d= -f2`
+ fi
+ 
+ case $NETWORK_MODE in

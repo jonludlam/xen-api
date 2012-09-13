@@ -1,0 +1,19 @@
+From: Jon Ludlam <jonathan.ludlam@eu.citrix.com>
+Date: Fri, 7 Oct 2011 14:44:48 +0100
+Subject: vncterm-fixes
+
+---
+ scripts/vncterm-wrapper |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+--- a/scripts/vncterm-wrapper
++++ b/scripts/vncterm-wrapper
+@@ -24,7 +24,7 @@
+ echo vncterm-wrapper:
+ xenstore-write -s /local/domain/$DOMID/vncterm-pid $$
+ if [ -z "${XIU}" ]; then
+-	exec /usr/lib/xen/bin/vncterm $* > /dev/null 2>&1
++	exec @LIBEXECDIR@/vncterm $* > /dev/null 2>&1
+ else
+ 	exec xenstore-write -s /local/domain/$DOMID/console/vnc-port 0
+ fi
