@@ -32,17 +32,32 @@ module W = Debug.Debugger(struct let name = "db_write" end)
 open Db_cache_types
 open Db_ref
 
+let db_calls : (string, int64) Hashtbl.t = Hashtbl.create 10
+let db_calls_per_table : ((string * string), int64) Hashtbl.t = Hashtbl.create 10
+let db_calls_per_table_per_field : ((string * string * string), int64) Hashtbl.t = Hashtbl.create 10
+let db_calls_m = Mutex.create ()
+
+let increment tbl key =
+	Mutex.execute db_calls_m (fun () ->
+		if Hashtbl.mem tbl key then begin
+			let current = Hashtbl.find tbl key in
+			Hashtbl.replace tbl key (Int64.add current 1L)
+		end else
+			Hashtbl.add tbl key 1L)
+
 (* Only needed by the DB_ACCESS signature *)
 let initialise () = ()
 
 (* This fn is part of external interface, so need to take lock *)
 let get_table_from_ref t objref =
+	increment db_calls "get_table_from_ref";
 	try
 		Some (Database.table_of_ref objref (get_database t))
 	with Not_found -> 
 		None
 		
 let is_valid_ref t objref =
+	increment db_calls "is_valid_ref";
     match (get_table_from_ref t objref) with
 		| Some _ -> true
 		| None -> false
@@ -52,6 +67,7 @@ let read_field_internal t tblname fldname objref db =
 
 (* Read field from cache *)
 let read_field t tblname fldname objref =
+	increment db_calls_per_table_per_field ("read_field", tblname, fldname);
 	read_field_internal t tblname fldname objref (get_database t)
 
 
@@ -76,6 +92,7 @@ let write_field_locked t tblname objref fldname newval =
 	Database.notify (WriteField(tblname, objref, fldname, current_val, newval)) (get_database t)
 			
 let write_field t tblname objref fldname newval =
+	increment db_calls_per_table_per_field ("write_field", tblname, fldname);
 	with_lock (fun () -> 
 		write_field_locked t tblname objref fldname newval)
 
@@ -86,6 +103,7 @@ let refresh_row t tblname objref =
 (* This function *should* only be used by db_actions code looking up Set(Ref _) fields:
    if we detect another (illegal) use we log the problem and fall back to a slow scan *)
 let read_set_ref t rcd =
+	increment db_calls_per_table ("read_set_ref", rcd.table);
 	let db = get_database t in
 	(* The where_record should correspond to the 'one' end of a 'one to many' *)
 	let one_tbl = rcd.table in
@@ -123,6 +141,7 @@ let read_set_ref t rcd =
    name of the Set Ref field in tbl; and ref list is the list of foreign keys from related
    table with remote-fieldname=objref] *)
 let read_record t tblname objref  =
+	increment db_calls_per_table ("read_record", tblname);
 	let db = get_database t in
 	let tbl = TableSet.find tblname (Database.tableset db) in
 	let row = Table.find_exn tblname objref tbl in
@@ -156,6 +175,7 @@ let delete_row_locked t tblname objref =
 	Database.notify (Delete(tblname, objref, Row.fold (fun k _ _ v acc -> (k, v) :: acc) row [])) (get_database t)
 		
 let delete_row t tblname objref = 
+	increment db_calls_per_table ("delete_row", tblname);
 	with_lock (fun () -> delete_row_locked t tblname objref)
 
 (* Create new row in tbl containing specified k-v pairs *)
@@ -177,10 +197,12 @@ let create_row_locked t tblname kvs' new_objref =
 	Database.notify (Create(tblname, new_objref, Row.fold (fun k _ _ v acc -> (k, v) :: acc) row [])) (get_database t)
 		
 let create_row t tblname kvs' new_objref =
+	increment db_calls_per_table ("create_row", tblname);
 	with_lock (fun () -> create_row_locked t tblname kvs' new_objref)
 
 (* Do linear scan to find field values which match where clause *)
 let read_field_where t rcd =
+	increment db_calls_per_table ("read_field_where", rcd.table);
 	let db = get_database t in
 	let tbl = TableSet.find rcd.table (Database.tableset db) in
 	Table.fold
@@ -206,11 +228,13 @@ let db_get_by_name_label t tbl label =
 		
 (* Read references from tbl *)
 let read_refs t tblname =
+	increment db_calls_per_table ("read_refs", tblname);
 	let tbl = TableSet.find tblname (Database.tableset (get_database t)) in
 	Table.fold (fun r _ _ _ acc -> r :: acc) tbl []
 		
 (* Return a list of all the refs for which the expression returns true. *)
 let find_refs_with_filter t (tblname: string) (expr: Db_filter_types.expr) = 
+	increment db_calls_per_table ("find_refs_with_filter", tblname);
 	let db = get_database t in
 	let tbl = TableSet.find tblname (Database.tableset db) in
 	let eval_val row = function
@@ -250,6 +274,7 @@ let process_structured_field_locked t (key,value) tblname fld objref proc_fn_sel
 	write_field t tblname objref fld new_str
 	
 let process_structured_field t (key,value) tblname fld objref proc_fn_selector =
+	increment db_calls_per_table ("process_structured_field", tblname, fld);
 	with_lock (fun () -> 
 		process_structured_field_locked t (key,value) tblname fld objref proc_fn_selector)
 	
