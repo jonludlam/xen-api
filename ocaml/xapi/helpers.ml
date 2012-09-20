@@ -81,9 +81,18 @@ let get_management_ip_addr ~__context =
 let get_localhost_uuid () =
   Xapi_inventory.lookup Xapi_inventory._installation_uuid
 
-let get_localhost ~__context : API.ref_host  =
-    let uuid = get_localhost_uuid () in
-	Db.Host.get_by_uuid ~__context ~uuid
+let localhost = ref None
+let localhost_m = Mutex.create ()
+
+(* Cache locally after the first lookup, as this won't change. *)
+let get_localhost ~__context : API.ref_host =
+	match Mutex.execute localhost_m (fun () -> !localhost) with
+	| Some x -> x
+	| None ->
+		let uuid = get_localhost_uuid () in
+		let result = Db.Host.get_by_uuid ~__context ~uuid in
+		Mutex.execute localhost_m (fun () -> localhost := Some result);
+		result
 
 let update_pif_address ~__context ~self =
 	let network = Db.PIF.get_network ~__context ~self in
