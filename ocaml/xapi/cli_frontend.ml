@@ -2040,6 +2040,22 @@ add a mapping of 'path' -> '/tmp', the command line should contain the argument 
       implementation=No_fd_local_session Cli_operations.host_shutdown_agent;
       flags=[Neverforward];
     };
+		"diagnostic-db-dump-counters",
+		{
+			reqd=[];
+			optn=[];
+			help="Display database call counters";
+			implementation=No_fd Cli_operations.diagnostic_db_dump_counters;
+			flags=[Neverforward];
+		};
+		"diagnostic-db-reset-counters",
+		{
+			reqd=[];
+			optn=[];
+			help="Reset database call counters";
+			implementation=No_fd Cli_operations.diagnostic_db_reset_counters;
+			flags=[Neverforward];
+		};
    "diagnostic-compact",
     {
       reqd=[];

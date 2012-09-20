@@ -45,6 +45,29 @@ let increment tbl key =
 		end else
 			Hashtbl.add tbl key 1L)
 
+let dump_counters () =
+	let buffer = Buffer.create 1024 in
+	Mutex.execute db_calls_m (fun () ->
+		Buffer.add_string buffer "db_calls\n";
+		Hashtbl.iter
+			(fun call count -> Printf.bprintf buffer "%s: %Ld\n" call count)
+			db_calls;
+		Buffer.add_string buffer "db_calls_per_table\n";
+		Hashtbl.iter
+			(fun (call, table) count -> Printf.bprintf buffer "%s %s: %Ld\n" call table count)
+			db_calls_per_table;
+		Buffer.add_string buffer "db_calls_per_table_per_field\n";
+		Hashtbl.iter
+			(fun (call, table, field) count -> Printf.bprintf buffer "%s %s %s: %Ld\n" call table field count)
+			db_calls_per_table_per_field);
+	Buffer.contents buffer
+
+let reset_counters () =
+	Mutex.execute db_calls_m (fun () ->
+		Hashtbl.clear db_calls;
+		Hashtbl.clear db_calls_per_table;
+		Hashtbl.clear db_calls_per_table_per_field)
+
 (* Only needed by the DB_ACCESS signature *)
 let initialise () = ()
 
@@ -274,7 +297,7 @@ let process_structured_field_locked t (key,value) tblname fld objref proc_fn_sel
 	write_field t tblname objref fld new_str
 	
 let process_structured_field t (key,value) tblname fld objref proc_fn_selector =
-	increment db_calls_per_table ("process_structured_field", tblname, fld);
+	increment db_calls_per_table_per_field ("process_structured_field", tblname, fld);
 	with_lock (fun () -> 
 		process_structured_field_locked t (key,value) tblname fld objref proc_fn_selector)
 	

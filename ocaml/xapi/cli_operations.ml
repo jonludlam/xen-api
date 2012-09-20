@@ -109,6 +109,15 @@ let get_client_file fd filename =
 		| _ ->
 			failwith "Thin CLI protocol error"
 
+let diagnostic_db_dump_counters printer rpc session_id params =
+	if Pool_role.is_master () then
+		printer (Cli_printer.PMsg (Db_cache_impl.dump_counters ()))
+	else
+		failwith "I'm not a master"
+
+let diagnostic_db_reset_counters printer rpc session_id params =
+	Db_cache_impl.reset_counters ();
+	printer (Cli_printer.PMsg "Done")
 
 let diagnostic_compact printer rpc session_id params =
 	Gc.compact ()

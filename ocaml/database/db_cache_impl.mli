@@ -1,5 +1,11 @@
 include Db_interface.DB_ACCESS
 
+(** Dump counters of all database calls. *)
+val dump_counters : unit -> string
+
+(** Reset all database call counters to zero. *)
+val reset_counters : unit -> unit
+
 (** [make t connections default_schema] initialises the in-memory cache *)
 val make : Db_ref.t -> Parse_db_conf.db_connection list -> Schema.t -> unit
 
