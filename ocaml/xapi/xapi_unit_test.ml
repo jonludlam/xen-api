@@ -13,6 +13,7 @@
  *)
 
 let _ = 
+	Helpers.cache_localhost := false;
 	Xapi_db_upgrade_test.all ();
 	Pool_db_backup_test.all ()
 
