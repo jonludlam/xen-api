@@ -316,7 +316,7 @@ module Database = struct
 								then acc
 								else
 									let row = Table.find vm acc in
-									let vbds' = SExpr.string_of (SExpr.Node (List.map (fun x -> SExpr.String x) vbds)) in
+									let vbds' = SExpr.string_of (SExpr.Node (String_marshall_helper.sort_set (List.map (fun x -> SExpr.String x) vbds))) in
 									let row' = Row.add g many_fldname vbds' row in
 									Table.add g vm row' acc)
 							vm_to_vbds many_tbl' in
@@ -347,19 +347,19 @@ end
 let add_to_set key t =
 	let existing = Db_action_helper.parse_sexpr t in
 	let processed = Db_action_helper.add_key_to_set key existing in
-	SExpr.string_of (SExpr.Node processed)
+	SExpr.string_of (SExpr.Node (String_marshall_helper.sort_set processed))
 
 let remove_from_set key t =
 	let existing = Db_action_helper.parse_sexpr t in
 	let processed = List.filter (function SExpr.String x -> x <> key | _ -> true) existing in
-	SExpr.string_of (SExpr.Node processed)
+	SExpr.string_of (SExpr.Node (String_marshall_helper.sort_set processed))
 
 let set_of_string t =
 	List.map
 		(function SExpr.String x -> x
 			| x -> failwith (Printf.sprintf "Unexpected sexpr: %s" t))
 		(Db_action_helper.parse_sexpr t)
-let string_of_set t = SExpr.string_of (SExpr.Node (List.map (fun x -> SExpr.String x) t))
+let string_of_set t = SExpr.string_of (SExpr.Node (String_marshall_helper.sort_set (List.map (fun x -> SExpr.String x) t)))
 
 exception Duplicate
 let add_to_map key value t =
@@ -370,13 +370,13 @@ let add_to_map key value t =
 				| _ -> false) existing) in
 	if duplicate then raise Duplicate;
 	let processed = kv::existing in
-	SExpr.string_of (SExpr.Node processed)
+	SExpr.string_of (SExpr.Node (String_marshall_helper.sort_map processed))
 
 let remove_from_map key t =
 	let existing = Db_action_helper.parse_sexpr t in
 	let processed = List.filter (function SExpr.Node [ SExpr.String x; _ ] -> x <> key
 		| _ -> true) existing in
-	SExpr.string_of (SExpr.Node processed)
+	SExpr.string_of (SExpr.Node (String_marshall_helper.sort_map processed))
 
 
 let (++) f g x = f (g x)
@@ -425,6 +425,8 @@ let update_many_to_many g tblname objref f db =
 	) db (Schema.many_to_many tblname (Database.schema db))
 
 let set_field tblname objref fldname newval db =
+	let cur = get_field tblname objref fldname db in
+	if cur=newval then db else begin
 	if fldname = Db_names.ref
 	then failwith (Printf.sprintf "Cannot safely update field: %s" fldname);
 	let need_other_table_update =
@@ -456,6 +458,7 @@ let set_field tblname objref fldname newval db =
 			 ++ (Table.update g objref Row.empty)
 			 ++ (Row.update g fldname ""))
 				(fun _ -> newval))) db
+	end
 	end
 
 let update_generation tblname objref db =

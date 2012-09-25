@@ -54,13 +54,15 @@ let upgrade_vm_memory_for_dmc () =
 
 let upgrade_bios () = 
 
+	let sort l =
+		List.sort (fun x y -> compare (fst x) (fst y)) l in
 	let check inventory bios_strings = 
 		Unixext.mkdir_safe "/var/tmp" 0o755;
 		Unixext.write_string_to_file "/var/tmp/.previousInventory" inventory;
 		let __context = make_test_database () in
 		upgrade_bios_strings.fn ~__context; 
 		let _, vm_r = List.hd (Db.VM.get_all_records ~__context) in
-		if vm_r.API.vM_bios_strings <> bios_strings
+		if (sort vm_r.API.vM_bios_strings) <> (sort bios_strings)
 		then failwith "bios strings upgrade" in
 	
 	check "OEM_MANUFACTURER=Dell" Xapi_globs.old_dell_bios_strings;
@@ -85,7 +87,7 @@ let update_snapshots () =
 	Db.VM.set_snapshot_time ~__context ~self:b_snap2 ~value:(Date.of_float 2.);
 	
 	update_snapshots.fn ~__context;
-	
+
 	(* a.parent = a_snap *)
 	if Db.VM.get_parent ~__context ~self:a <> a_snap
 	then failwith "a.parent <> a_snap";

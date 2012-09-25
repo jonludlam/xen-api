@@ -82,6 +82,38 @@ let event_next_test session_id =
 	then failed test "failed to see pool.other_config change"
 	else success test
 
+let event_stable_sort_test session_id =
+	let test = make_test "Event.from stable_sort test" 0 in
+	start test;
+	let pool = Client.Pool.get_all !rpc session_id |> List.hd in
+
+	Client.Pool.remove_from_other_config !rpc session_id pool "test1";
+	Client.Pool.remove_from_other_config !rpc session_id pool "test3";
+	Client.Pool.add_to_other_config !rpc session_id pool "test1" "test2";
+	Client.Pool.add_to_other_config !rpc session_id pool "test3" "test4";
+
+	let oc = Client.Pool.get_other_config !rpc session_id pool in
+	Client.Pool.set_name_description !rpc session_id pool "test";
+
+	let events = Client.Event.from !rpc session_id [ "pool" ] "" 10. |> event_from_of_xmlrpc in
+	let token = events.token in
+
+	Client.Pool.set_name_description !rpc session_id pool "test";
+	Client.Pool.set_other_config !rpc session_id pool (List.rev oc);
+
+	let events = Client.Event.from !rpc session_id [ "pool" ] token 1. |> event_from_of_xmlrpc in
+	Client.Pool.remove_from_other_config !rpc session_id pool "test1";
+	Client.Pool.remove_from_other_config !rpc session_id pool "test3";
+
+	if List.length events.events > 0 
+	then begin
+		debug test (Printf.sprintf "Events length=%d" (List.length events.events));
+		List.iter (fun ev ->
+			debug test (Printf.sprintf "Event\n\n%s\n\n" (Event_types.string_of_event ev));
+		    debug test (Printf.sprintf "%s" (Xml.to_string (Opt.unbox ev.snapshot)))) events.events;
+		failed test "Saw unnecessary other-config change"
+	end else success test
+	
 let event_from_test session_id =
 	let test = make_test "Event.from test" 0 in
 	start test;
@@ -819,6 +851,7 @@ let _ =
 				maybe_run_test "event" event_next_unblocking_test;
 				maybe_run_test "event" (fun () -> event_next_test s);
 				maybe_run_test "event" (fun () -> event_from_test s);
+				maybe_run_test "event" (fun () -> event_stable_sort_test s);
 (*				maybe_run_test "event" (fun () -> object_level_event_test s);*)
 				maybe_run_test "event" (fun () -> event_message_test s);
 				maybe_run_test "vdi" (fun () -> vdi_test s);

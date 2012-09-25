@@ -28,11 +28,22 @@ let ensure_utf8_xml string =
     warn "Whilst doing 'set' of structured field, string truncated to: '%s'." prefix;
   prefix
 
+let sort_set set = List.sort (fun x y -> 
+	match (x,y) with
+		| SExpr.String x', SExpr.String y' -> compare x' y'
+		| _ -> failwith "Programmer Error") set
+
+let sort_map map = List.sort (fun x y ->
+	match (x,y) with
+		| SExpr.Node [ SExpr.String x'; _ ], 
+			SExpr.Node [ SExpr.String y'; _ ] -> compare x' y'
+		| _ -> failwith "Programmer Error") map
+
 let set f ks =
   SExpr.string_of
-    (SExpr.Node (List.map (fun x -> SExpr.String (ensure_utf8_xml (f x))) ks))
+    (SExpr.Node (sort_set (List.map (fun x -> SExpr.String (ensure_utf8_xml (f x))) ks)))
 
 let map f g kv = 
-  SExpr.string_of
-    (SExpr.Node (List.map (fun (k, v) -> 
-			     SExpr.Node [ SExpr.String (ensure_utf8_xml (f k)); SExpr.String (ensure_utf8_xml (g v)) ]) kv))
+  SExpr.string_of 
+    (SExpr.Node (sort_map (List.map (fun (k, v) -> 
+			     SExpr.Node [ SExpr.String (ensure_utf8_xml (f k)); SExpr.String (ensure_utf8_xml (g v)) ]) kv)))
