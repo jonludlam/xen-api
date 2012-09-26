@@ -20,7 +20,7 @@ Subject: xapissl-script-install
  let stop () =
 --- a/scripts/OMakefile
 +++ b/scripts/OMakefile
-@@ -62,7 +62,7 @@
+@@ -61,7 +61,7 @@
  	mkdir -p $(DESTDIR)/etc/rc.d/init.d
  	$(IPROG) init.d-xenservices $(DESTDIR)/etc/rc.d/init.d/xenservices
  	$(IPROG) init.d-xapi $(DESTDIR)/etc/rc.d/init.d/xapi

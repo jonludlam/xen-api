@@ -6,11 +6,9 @@ Subject: debian-qemu-location
  scripts/qemu-dm-wrapper |    2 +-
  1 files changed, 1 insertions(+), 1 deletions(-)
 
-diff --git a/scripts/qemu-dm-wrapper b/scripts/qemu-dm-wrapper
-index 583ad4e..2b6a453 100755
 --- a/scripts/qemu-dm-wrapper
 +++ b/scripts/qemu-dm-wrapper
-@@ -79,7 +79,7 @@ def main(argv):
+@@ -79,7 +79,7 @@
  	import os
  
  	qemu_env = os.environ
@@ -19,4 +17,14 @@ index 583ad4e..2b6a453 100755
  	domid = int(argv[1])
  	qemu_args = ['qemu-dm-%d'%domid] + argv[2:]
  
--- 
+--- a/ocaml/xenops/xenops_server_xen.ml
++++ b/ocaml/xenops/xenops_server_xen.ml
+@@ -27,7 +27,7 @@
+ module D = Debug.Debugger(struct let name = service_name end)
+ open D
+ 
+-let _qemu_dm = "/opt/xensource/libexec/qemu-dm-wrapper"
++let _qemu_dm = Filename.concat Fhs.libexecdir "qemu-dm-wrapper"
+ let _tune2fs = "/sbin/tune2fs"
+ let _mkfs = "/sbin/mkfs"
+ let _mount = "/bin/mount"

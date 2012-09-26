@@ -70,7 +70,7 @@ Subject: fix-permissions
  	mkdir -p $(DESTDIR)/lib/udev/rules.d ### FHS_FIXME
  	sh -c \
  	'cd $(DESTDIR)/lib/udev/rules.d; \
-@@ -45,19 +45,19 @@
+@@ -44,19 +44,19 @@
  	$(IPROG) xapi-health-check $(DESTDIR)$(LIBEXECDIR)
  	$(IPROG) license-check.py $(DESTDIR)$(LIBEXECDIR)
  	$(IPROG) mail-alarm $(DESTDIR)$(LIBEXECDIR)
@@ -96,7 +96,7 @@ Subject: fix-permissions
  	mkdir -p $(DESTDIR)/etc/init.d
  	mkdir -p $(DESTDIR)/etc/rc.d/init.d
  	$(IPROG) init.d-xenservices $(DESTDIR)/etc/rc.d/init.d/xenservices
-@@ -91,9 +91,9 @@
+@@ -90,9 +90,9 @@
  	$(IPROG) xe-get-network-backend $(DESTDIR)$(BINDIR)
  	$(IPROG) static-vdis $(DESTDIR)$(BINDIR)
  	$(IPROG) with-vdi $(DESTDIR)$(OPTDIR)/debug
