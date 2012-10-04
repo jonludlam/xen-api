@@ -353,7 +353,7 @@ let from ~__context ~classes ~token ~timeout =
 	in
 
 	let rec grab_nonempty_range () =
-		let (msg_gen, messages, tableset, (creates,mods,deletes,last)) as result = Db_lock.with_lock (fun () -> grab_range (Db_backend.make ())) in
+		let (msg_gen, messages, tableset, (creates,mods,deletes,last)) as result = grab_range (Db_backend.make ()) in
 		if List.length creates = 0 && List.length mods = 0 && List.length deletes = 0 && List.length messages = 0 && Unix.gettimeofday () < sub.timeout
 		then
 			(
