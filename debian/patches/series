@@ -12,7 +12,6 @@
 0016-udev-fixes.patch
 0017-vncterm-fixes.patch
 0018-pam.patch
-0019-python-XenAPI-install-path.patch
 0020-xapissl-script-install.patch
 0022-new-ocaml-layout.patch
 0023-dont-statically-link-anything.patch

@@ -22,7 +22,7 @@ Subject: pygrub-path
  			      "eliloader", eliloader_path ]
 --- a/scripts/OMakefile
 +++ b/scripts/OMakefile
-@@ -128,6 +128,8 @@
+@@ -126,6 +126,8 @@
  	mkdir -p $(DESTDIR)$(HOOKSDIR)/host-post-declare-dead
  	$(IPROG) 10resetvdis $(DESTDIR)$(HOOKSDIR)/host-post-declare-dead
  	$(IPROG) pci-info $(DESTDIR)$(LIBEXECDIR)

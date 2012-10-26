@@ -1,6 +1,6 @@
 --- a/Makefile
 +++ b/Makefile
-@@ -87,6 +87,7 @@
+@@ -85,6 +85,7 @@
  	omake install
  	omake lib-uninstall
  	omake lib-install

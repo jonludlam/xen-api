@@ -65,7 +65,7 @@
  		let domid = dom.domid in
  		let kib = Xenctrl.pages_to_kib (Int64.of_nativeint dom.total_memory_pages) in
  		let memory = Int64.mul kib 1024L in
-@@ -414,8 +414,8 @@
+@@ -400,8 +400,8 @@
  
  let read_mem_metrics xc =
  	let physinfo = Xenctrl.physinfo xc in
@@ -76,7 +76,7 @@
  	let gcstat =
  		if !Xapi_globs.xapi_gc_debug then (
  			if !previous_oldness > 5 then (
-@@ -541,7 +541,7 @@
+@@ -527,7 +527,7 @@
  	let timestamp = Unix.gettimeofday () in
  	let my_rebooting_vms =
  		StringSet.fold (fun uuid acc -> uuid::acc) !rebooting_vms [] in
@@ -87,7 +87,7 @@
  	let domain_paused d = d.paused in
 --- a/ocaml/rrdd/rrdd_server.ml
 +++ b/ocaml/rrdd/rrdd_server.ml
-@@ -425,7 +425,7 @@
+@@ -274,7 +274,7 @@
  	use_min_max := value
  
  let string_of_domain_handle dh =
@@ -143,7 +143,7 @@
 +	Uuid.uuid_of_int_array (Xenctrl.domain_getinfo xc domid).Xenctrl.handle
 --- a/ocaml/xapi/xapi.ml
 +++ b/ocaml/xapi/xapi.ml
-@@ -512,11 +512,11 @@
+@@ -535,11 +535,11 @@
  let calculate_boot_time_host_free_memory () =
  	let ( + ) = Nativeint.add in
  	let host_info = with_xc (fun xc -> Xenctrl.physinfo xc) in
@@ -159,7 +159,7 @@
  	let boot_time_host_free_kib =
 --- a/ocaml/xapi/xapi_xenops.ml
 +++ b/ocaml/xapi/xapi_xenops.ml
-@@ -1224,7 +1224,7 @@
+@@ -1271,7 +1271,7 @@
  
  let manage_dom0 dbg =
  	(* Tell xenopsd to manage domain 0 *)
@@ -334,7 +334,7 @@
  	let cnx = xc, xs in
 --- a/ocaml/xenops/xenguestHelper.ml
 +++ b/ocaml/xenops/xenguestHelper.ml
-@@ -156,7 +156,7 @@
+@@ -153,7 +153,7 @@
  			let open Int64 in
  			let open Xenctrl in
  			let p = Xenctrl.physinfo xc in
@@ -372,7 +372,7 @@
  
  let create_domain ~xc ~xs ~hvm =
  	let uuid = Uuid.make_uuid () in
-@@ -132,7 +132,7 @@
+@@ -129,7 +129,7 @@
  let domain_get_uuid ~xc ~domid =
  	try
  		let h = Xenctrl.domain_getinfo xc domid in
@@ -381,7 +381,7 @@
  		printf "%s\n" uuid
  	with _ ->
  		()
-@@ -151,8 +151,8 @@
+@@ -148,8 +148,8 @@
  		else
  			[ "id"; "state"; "cpu_time"; "uuid" ]
  		in
@@ -392,7 +392,7 @@
  		let page_to_mib pages =
  			Nativeint.to_string (Nativeint.div pages (Nativeint.of_int 256)) in
  		let int = string_of_int and int64 = Int64.to_string and int32 = Int32.to_string in
-@@ -249,7 +249,7 @@
+@@ -246,7 +246,7 @@
  	let of_device (d: device) : string list =
  		device_state_to_sl (stat ~xs d) in
  	let l = Xenctrl.domain_getinfolist xc 0 in
@@ -401,7 +401,7 @@
  	let devices =
  		Listext.List.setify (
  			List.concat (
-@@ -366,7 +366,7 @@
+@@ -363,7 +363,7 @@
  	Domain.del_irq ~xc domid irq
  
  let sched_domain ~xc ~domid ~weight ~cap =
@@ -410,7 +410,7 @@
  	if Xenctrl.sched_id xc <> 5 then
  		failwith "not using credit scheduler";
  	match weight, cap with
-@@ -384,7 +384,7 @@
+@@ -381,7 +381,7 @@
  	| None, None         -> ()
  
  let sched_domain_get ~xc ~domid =
@@ -419,7 +419,7 @@
  	if Xenctrl.sched_id xc <> 5 then
  		failwith "not using credit scheduler";
  	let params = Xenctrl.sched_credit_domain_get xc domid in
-@@ -676,7 +676,7 @@
+@@ -671,7 +671,7 @@
                 boot, ioport_start, ioport_end, iomem_start, iomem_end, irq,
                 slot, timeout, otherargs, allcommands = do_cmd_parsing subcmd init_pos in
  
@@ -430,7 +430,7 @@
  	let target_kib = max_kib in
 --- a/ocaml/xenops/xenops_server_xen.ml
 +++ b/ocaml/xenops/xenops_server_xen.ml
-@@ -112,7 +112,7 @@
+@@ -137,7 +137,7 @@
  let this_domid ~xs = int_of_string (xs.Xs.read "domid")
  
  let uuid_of_vm vm = Uuid.uuid_of_string vm.Vm.id
@@ -439,7 +439,7 @@
  
  (* During a live migrate, there will be multiple domains with the same uuid.
     The convention is: we construct things on the newest domain (e.g. VBD.plug)
-@@ -125,7 +125,7 @@
+@@ -150,7 +150,7 @@
  	| Expect_only_one
  
  let di_of_uuid ~xc ~xs domain_selection uuid =
@@ -448,7 +448,7 @@
  	let uuid' = Uuid.string_of_uuid uuid in
  	let all = Xenctrl.domain_getinfolist xc 0 in
  	let possible = List.filter (fun x -> uuid_of_di x = uuid) all in
-@@ -499,7 +499,7 @@
+@@ -524,7 +524,7 @@
  		with_xc_and_xs
  			(fun xc xs ->
  				let pages_per_mib = 256L in
@@ -457,7 +457,7 @@
  			)
  	let send_debug_keys keys =
  		with_xc_and_xs
-@@ -717,7 +717,7 @@
+@@ -742,7 +742,7 @@
  		with Does_not_exist("domain", _) ->
  			debug "Domain for VM %s does not exist: ignoring" vm.Vm.id
  
@@ -466,9 +466,9 @@
  
  	let add vm =
  		with_xc_and_xs
-@@ -1179,9 +1179,9 @@
+@@ -1208,9 +1208,9 @@
  					(fun fd ->
- 						Domain.suspend task ~xc ~xs ~hvm ~progress_callback ~qemu_domid domid fd flags'
+ 						Domain.suspend task ~xc ~xs ~hvm ~progress_callback ~qemu_domid (choose_xenguest vm.Vm.platformdata) domid fd flags'
  							(fun () ->
 -								if not(request_shutdown task vm Suspend 30.)
 +								if not(request_shutdown task vm Xenops_server_plugin.Suspend 30.)
@@ -478,7 +478,7 @@
  								then raise (Failed_to_shutdown(vm.Vm.id, 1200.));
  							);
  						(* Record the final memory usage of the domain so we know how
-@@ -1350,7 +1350,7 @@
+@@ -1382,7 +1382,7 @@
  								| None -> 0.
  							end;
  							shadow_multiplier_target = shadow_multiplier_target;
@@ -487,7 +487,7 @@
  						}
  			)
  
-@@ -1417,7 +1417,7 @@
+@@ -1449,7 +1449,7 @@
  			let frontend_di = match frontend |> Uuid.uuid_of_string |> di_of_uuid ~xc ~xs domain_selection with
  				| None -> raise (Does_not_exist ("domain", frontend))
  				| Some x -> x in
@@ -496,7 +496,7 @@
  			f xc xs frontend_di.domid frontend_di.hvm_guest
  		)
  
-@@ -1610,7 +1610,7 @@
+@@ -1642,7 +1642,7 @@
  				end
  			) Newest vm
  
@@ -505,7 +505,7 @@
  
  	let unplug task vm vbd force =
  		let vm_t = DB.read vm in
-@@ -1996,7 +1996,7 @@
+@@ -2028,7 +2028,7 @@
                  ignore (run (Filename.concat Fhs.libexecdir "setup-vif-rules") ["vif"; domid; devid; "filter"]);
                  (* Update rules for the tap device if the VM has booted HVM with no PV drivers. *)
  				let di = Xenctrl.domain_getinfo xc device.frontend.domid in
@@ -514,7 +514,7 @@
  				then ignore (run (Filename.concat Fhs.libexecdir "setup-vif-rules") ["tap"; domid; devid; "filter"])
  			)
  
-@@ -2063,7 +2063,7 @@
+@@ -2095,7 +2095,7 @@
  
  let list_domains xc =
  	let dis = Xenctrl.domain_getinfolist xc 0 in
@@ -523,7 +523,7 @@
  	List.fold_left (fun map (k, v) -> IntMap.add k v map) IntMap.empty (List.combine ids dis)
  
  
-@@ -2072,7 +2072,7 @@
+@@ -2104,7 +2104,7 @@
  	| Some _, None -> true
  	| None, None -> false
  	| Some a', Some b' ->
@@ -532,7 +532,7 @@
  		a'.shutdown <> b'.shutdown
  		|| (a'.shutdown && b'.shutdown && (a'.shutdown_code <> b'.shutdown_code))
  
-@@ -2169,7 +2169,7 @@
+@@ -2201,7 +2201,7 @@
  				let different = list_different_domains !domains domains' in
  				List.iter
  					(fun domid ->
@@ -541,7 +541,7 @@
  						debug "Domain %d may have changed state" domid;
  						(* The uuid is either in the new domains map or the old map. *)
  						let di = IntMap.find domid (if IntMap.mem domid domains' then domains' else !domains) in
-@@ -2214,7 +2214,7 @@
+@@ -2246,7 +2246,7 @@
  			xs.Xs.watch _releaseDomain "";
  			look_for_different_domains ();
  
@@ -550,7 +550,7 @@
  
  			let fire_event_on_vm domid =
  				let d = int_of_string domid in
-@@ -2301,7 +2301,7 @@
+@@ -2333,7 +2333,7 @@
  	()
  
  module DEBUG = struct

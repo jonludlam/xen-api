@@ -31,7 +31,7 @@ Subject: fix-xenguest
  #ifndef HVM_PARAM_VIRIDIAN
  #warning missing viridian parameter
  #endif
-@@ -329,11 +325,8 @@
+@@ -375,11 +371,8 @@
  	                       c_console_evtchn, &console_mfn);
  	caml_leave_blocking_section();
  
@@ -44,7 +44,7 @@ Subject: fix-xenguest
  	free(c_image_name);
  	free(c_ramdisk_name);
  	xc_dom_release(dom);
-@@ -393,15 +386,20 @@
+@@ -439,15 +432,20 @@
  
  	xc_get_hvm_param(xch, domid, HVM_PARAM_STORE_PFN, store_mfn);
  	xc_set_hvm_param(xch, domid, HVM_PARAM_PAE_ENABLED, f.pae);

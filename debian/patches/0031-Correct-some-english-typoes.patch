@@ -36,7 +36,7 @@ Subject: [PATCH 06/15] Correct some english typoes.
    ()
 --- a/ocaml/xapi/message_forwarding.ml
 +++ b/ocaml/xapi/message_forwarding.ml
-@@ -2850,7 +2850,7 @@
+@@ -2860,7 +2860,7 @@
  			do_op_on ~local_fn ~__context ~host (fun session_id rpc -> Client.PIF.scan rpc session_id host)
  
  		let introduce ~__context ~host ~mAC ~device =
