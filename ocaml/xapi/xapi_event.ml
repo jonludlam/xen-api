@@ -466,6 +466,9 @@ let from_real filter_fields ~__context ~classes ~token ~timeout =
 		with e ->
 			warn "Failed to parse event.from token: %s (%s)" token (Printexc.to_string e);
 			raise (Api_errors.Server_error(Api_errors.event_from_token_parse_failure, [ token ])) in
+	
+	let nbits = Bloom.nbits bloom in
+	debug "nbits=%d" nbits;
 
 	with_from_sub __context classes bloom timeout last_generation last_msg_gen (fun (gen_sub, from_sub) ->
 		let tables = List.filter (fun table -> table_matches gen_sub.subs table) all_event_tables in
@@ -508,7 +511,7 @@ let from_real filter_fields ~__context ~classes ~token ~timeout =
 											mods
 									end else mods),
 									deletes, last, (
-										let res=regen_bloom || (matches_expr && (not matches_bloom)) in
+										let res=regen_bloom || (matches_expr && (not matches_bloom)) || (matches_bloom && (not matches_expr)) in
 										debug "regen_bloom=%b matches_expr=%b matches_bloom=%b: compound=%b" regen_bloom matches_expr matches_bloom res;
 										res))
 								end
@@ -594,9 +597,11 @@ let from_real filter_fields ~__context ~classes ~token ~timeout =
 			let valid_ref_counts =
 				Db_cache_types.TableSet.fold
 					(fun tablename _ _ table acc ->
-						(String.lowercase tablename,
-						(Db_cache_types.Table.fold
-							(fun r _ _ _ acc -> Int32.add 1l acc) table 0l))::acc)
+						if List.mem tablename tables then
+							(String.lowercase tablename,
+							 (Db_cache_types.Table.fold
+								  (fun r _ _ _ acc -> Int32.add 1l acc) table 0l))::acc
+						else acc)
 					tableset [] in
 
 			debug "regen_bloom=%b" regen_bloom;
@@ -610,12 +615,17 @@ let from_real filter_fields ~__context ~classes ~token ~timeout =
 					let bloom = Bloom.create 7 ((Int32.to_int db_size) * 10) in
 					Db_cache_types.TableSet.iter
 						(fun tablename table ->
-							Db_cache_types.Table.iter
-								(fun r _ ->
-									Bloom.add bloom r) table) tableset;
+							if List.mem tablename tables then 
+								Db_cache_types.Table.iter
+									(fun objref row ->
+										if event_from_matches_expr gen_sub from_sub tablename objref (Some row) then
+											Bloom.add bloom objref) table) tableset;
 					bloom
 				end
 			in
+
+			let new_nbits = Bloom.nbits bloom in
+			debug "new_nbits=%d" new_nbits;
 
 			let result = {
 				events = message_events;

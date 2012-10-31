@@ -5,6 +5,9 @@ type t = {
 	k: int;
     s: string array;} with rpc
 
+let t_of_rpc r = let t = t_of_rpc r in {t with filter=Base64.decode t.filter}
+let rpc_of_t t = rpc_of_t {t with filter=Base64.encode t.filter}
+
 let rndstr () =
 	let buf = String.make 20 '\000' in
 	let ic = open_in_bin "/dev/urandom" in
@@ -32,6 +35,7 @@ let test_bit t n =
 
 let get_bits t x =
 	let max_bit = String.length t.filter * 7 in
+	if max_bit=0 then failwith "Ack! problem!";
 	let rec inner i =
 		if i=t.k then [] else
 			let n = Hashtbl.hash (Digest.string (t.s.(i)^x)) in
@@ -47,6 +51,12 @@ let test t x =
 	let bits = get_bits t x in
 	List.fold_left (fun r b -> r && test_bit t b) true bits
 
+let nbits t =
+	let max_bit = String.length t.filter * 7 in
+	let rec inner n acc =
+		if n=max_bit then acc else 
+			if test_bit t n then inner (n+1) (acc+1) else inner (n+1) (acc)
+	in inner 0 0
 
 let time_this f = 
   let start_time = Unix.gettimeofday () in
@@ -75,6 +85,16 @@ let unittest () =
 	Printf.printf "Took %f seconds\n" time;
 	assert (List.length check = 2000);
 	Printf.printf "Error rate: %f\n" (float_of_int n /. 4000.0);
+	let json = Jsonrpc.to_string (rpc_of_t t) in
+	let new_t = t_of_rpc (Jsonrpc.of_string json) in
+	if new_t <> t then begin
+		Printf.printf "new_t.filter='%s'\n" new_t.filter;
+		Printf.printf "old_t.filter='%s'\n" t.filter;
+	end
+
+		
+
+		
 
 
 
