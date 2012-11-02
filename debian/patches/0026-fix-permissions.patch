@@ -62,15 +62,15 @@ Subject: fix-permissions
 @@ -6,8 +6,8 @@
  
  noarch-install:
- 	mkdir -p $(DESTDIR)/etc/udev                    ### FHS_FIXME
--	$(IPROG) xen-backend.rules $(DESTDIR)/lib/udev  ### FHS_FIXME
--	$(IPROG) xen-frontend.rules $(DESTDIR)/lib/udev ### FHS_FIXME
-+	$(IDATA) xen-backend.rules $(DESTDIR)/lib/udev  ### FHS_FIXME
-+	$(IDATA) xen-frontend.rules $(DESTDIR)/lib/udev ### FHS_FIXME
- 	mkdir -p $(DESTDIR)/lib/udev/rules.d ### FHS_FIXME
+ 	mkdir -p $(DESTDIR)$(UDEVDIR)
+-	$(IPROG) xen-backend.rules $(DESTDIR)$(UDEVDIR)
+-	$(IPROG) xen-frontend.rules $(DESTDIR)$(UDEVDIR)
++	$(IDATA) xen-backend.rules $(DESTDIR)$(UDEVDIR)
++	$(IDATA) xen-frontend.rules $(DESTDIR)$(UDEVDIR)
+ 	mkdir -p $(DESTDIR)$(UDEVDIR)/rules.d
  	sh -c \
- 	'cd $(DESTDIR)/lib/udev/rules.d; \
-@@ -44,18 +44,18 @@
+ 	'cd $(DESTDIR)$(UDEVDIR)/rules.d; \
+@@ -45,18 +45,18 @@
  	$(IPROG) xapi-health-check $(DESTDIR)$(LIBEXECDIR)
  	$(IPROG) license-check.py $(DESTDIR)$(LIBEXECDIR)
  	$(IPROG) mail-alarm $(DESTDIR)$(LIBEXECDIR)
@@ -94,7 +94,7 @@ Subject: fix-permissions
  	mkdir -p $(DESTDIR)/etc/init.d
  	mkdir -p $(DESTDIR)/etc/rc.d/init.d
  	$(IPROG) init.d-xenservices $(DESTDIR)/etc/rc.d/init.d/xenservices
-@@ -89,9 +89,9 @@
+@@ -90,9 +90,9 @@
  	$(IPROG) xe-get-network-backend $(DESTDIR)$(BINDIR)
  	$(IPROG) static-vdis $(DESTDIR)$(BINDIR)
  	$(IPROG) with-vdi $(DESTDIR)$(OPTDIR)/debug
