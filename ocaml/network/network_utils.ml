@@ -34,6 +34,8 @@ let ethtool = "/sbin/ethtool"
 let bonding_dir = "/proc/net/bonding/"
 let dhcp6c = "/sbin/dhcp6c"
 
+let suppress_dhclient_release = ref false
+
 let call_script ?(log_successful_output=false) script args =
 	try
 		Unix.access script [ Unix.X_OK ];
@@ -433,7 +435,8 @@ module Dhclient = struct
 
 	let stop ?(ipv6=false) interface =
 		try
-			ignore (call_script ~log_successful_output:true dhclient ["-r";
+			ignore (call_script ~log_successful_output:true dhclient [
+				(if !suppress_dhclient_release then "-x" else "-r");
 				"-pf"; pid_file ~ipv6 interface;
 				interface]);
 			Unix.unlink (pid_file ~ipv6 interface)

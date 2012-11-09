@@ -21,6 +21,27 @@ open Network_utils
 module D = Debug.Debugger(struct let name = "networkd" end)
 open D
 
+(* Config parameters *)
+let config_file = ref (Filename.concat Fhs.etcdir "xcp-networkd.conf")
+let daemonize = ref false
+let pidfile = ref "/var/run/xcp-networkd.pid"
+
+let config_spec = [
+	"daemon", Config.Set_bool daemonize;
+	"pidfile", Config.Set_string pidfile;
+	"suppress_dhclient_release", Config.Set_bool suppress_dhclient_release;
+]
+
+let read_config_file () =
+	let unknown_key k v = debug "Unknown key/value pairs: (%s, %s)" k v in
+	if Sys.file_exists !config_file then begin
+		(* Will raise exception if config is mis-formatted. It's up to the
+		   caller to inspect and handle the failure.
+		*)
+		Config.read !config_file config_spec unknown_key;
+		debug "Read global variables successfully from %s" !config_file
+	end
+
 let server = Http_svr.Server.empty ()
 
 let path = Filename.concat Fhs.vardir name
@@ -71,8 +92,6 @@ let handle_shutdown () =
 	Sys.set_signal Sys.sigpipe Sys.Signal_ignore
 
 let _ =
-	let pidfile = ref "" in
-	let daemonize = ref false in
 	Debug.set_facility Syslog.Local5;
 
 	(* We should make the following configurable *)
@@ -84,6 +103,8 @@ let _ =
 		])
 		(fun _ -> failwith "Invalid argument")
 		(Printf.sprintf "Usage: %s [-daemon] [-pidfile filename]" name);
+
+	read_config_file ();
 
 	debug "%s" (String.concat ", " (Debug.get_all_debug_keys()));
 
