@@ -1796,11 +1796,21 @@ module UPDATES = struct
 				Updates.last_id dbg updates
 			) ()
 
-	let inject_barrier _ dbg id =
+	let inject_barrier _ dbg vm_id id =
 		Debug.with_thread_associated dbg
 			(fun () ->
-				debug "UPDATES.inject_barrier %d" id;
-				Updates.add (Dynamic.Barrier id) updates;
+				let barrier_updates = 
+					let u,_ = Updates.get dbg None None updates in
+					List.filter (function
+						| Dynamic.Vm id -> id=vm_id
+						| Dynamic.Vbd (id,_) -> id=vm_id
+						| Dynamic.Vif (id,_) -> id=vm_id
+						| Dynamic.Pci (id,_) -> id=vm_id
+						| _ -> false (* Task and Barrier *)) u
+				in
+				debug "UPDATES.inject_barrier %s %d" vm_id id;
+				let update = Dynamic.Barrier (id, barrier_updates) in
+				Updates.add update updates;
 				debug "Updates.Dump: %s" (updates |> Updates.Dump.make |> Updates.Dump.rpc_of_t |> Jsonrpc.to_string);
 				()
 			) ()
@@ -1809,7 +1819,7 @@ module UPDATES = struct
 		Debug.with_thread_associated dbg
 			(fun () ->
 				debug "UPDATES.remove_barrier %d" id;
-				Updates.remove (Dynamic.Barrier id) updates;
+				Updates.filter (function | Dynamic.Barrier (id',_) -> id' <> id | _ -> true) updates;
 				()
 			) ()
 

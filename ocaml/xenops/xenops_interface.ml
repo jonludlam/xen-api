@@ -331,7 +331,7 @@ module Dynamic = struct
 		| Vif of Vif.id
 		| Pci of Pci.id
 		| Task of Task.id
-		| Barrier of int
+		| Barrier of int * (id list)
 	type t =
 		| Vm_t of Vm.id * ((Vm.t * Vm.state) option)
 		| Vbd_t of Vbd.id * ((Vbd.t * Vbd.state) option)
@@ -423,7 +423,7 @@ end
 module UPDATES = struct
 	external get: debug_info -> int option -> int option -> Dynamic.id list * int = ""
 	external last_id: debug_info -> int = ""
-    external inject_barrier: debug_info -> int -> unit = ""
+    external inject_barrier: debug_info -> Vm.id -> int -> unit = ""
 	external remove_barrier: debug_info -> int -> unit = ""
 	external refresh_vm: debug_info -> Vm.id -> unit = ""
 end

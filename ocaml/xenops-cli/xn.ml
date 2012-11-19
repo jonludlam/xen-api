@@ -651,7 +651,7 @@ let rec events_watch from =
 				Printf.sprintf "PCI %s.%s" (fst id) (snd id)
 			| Task id ->
 				Printf.sprintf "Task %s" id
-			| Barrier id ->
+			| Barrier (id,_) ->
 				Printf.sprintf "Barrier %d" id
 		) events in
 	List.iter (fun x -> Printf.printf "%-8d %s\n" next x) lines;

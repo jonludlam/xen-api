@@ -157,6 +157,11 @@ module UpdateRecorder = functor(Ord: Map.OrderedType) -> struct
 		next = t.next + 1
 	}, t.next + 1
 
+	let filter f t = {
+		map = M.filter f t.map;
+		next = t.next + 1
+	}, t.next + 1
+
 	let get from t =
 		(* [from] is the id of the most recent event already seen *)
 		let before, after = M.partition (fun _ time -> time <= from) t.map in
@@ -255,7 +260,15 @@ let remove x t =
 		(fun () ->
 			let result, id = U.remove x t.u in
 			t.u <- result;
-			Condition.signal t.c
+			Condition.broadcast t.c
+		)
+
+let filter f t =
+	Mutex.execute t.m
+		(fun () ->
+			let result, id = U.filter (fun x y -> f x) t.u in
+			t.u <- result;
+			Condition.broadcast t.c
 		)
 
 module Dump = struct
