@@ -331,7 +331,7 @@ module Dynamic = struct
 		| Vif of Vif.id
 		| Pci of Pci.id
 		| Task of Task.id
-		| Barrier of int * (id list)
+		| Barrier of int * ((id * int) list)
 	type t =
 		| Vm_t of Vm.id * ((Vm.t * Vm.state) option)
 		| Vbd_t of Vbd.id * ((Vbd.t * Vbd.state) option)

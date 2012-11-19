@@ -783,7 +783,7 @@ module Wrapper = functor(Impl: Server_impl) -> struct
 		let get _ ~dbg ~from ~timeout =
 			let from = try Some (int_of_string from) with _ -> None in
 			let ids, next = Updates.get dbg from timeout updates in
-			(ids, string_of_int next)
+			(List.map fst ids, string_of_int next)
 	end
 
 end

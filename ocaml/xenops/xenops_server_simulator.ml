@@ -396,7 +396,7 @@ module VIF = struct
 end
 
 module UPDATES = struct
-	let get last timeout = Updates.get "UPDATES.get" last timeout updates
+	let get last timeout = let (u,t) = Updates.get "UPDATES.get" last timeout updates in (List.map fst u, t)
 end
 
 module DEBUG = struct

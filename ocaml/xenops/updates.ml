@@ -167,9 +167,7 @@ module UpdateRecorder = functor(Ord: Map.OrderedType) -> struct
 		let before, after = M.partition (fun _ time -> time <= from) t.map in
 		let xs, last = M.fold (fun key v (acc, m) -> (key, v) :: acc, max m v) after ([], from) in
 		(* NB 'xs' must be in order so 'Barrier' requests don't permute *)
-		let xs = List.sort (fun (_, v1) (_, v2) -> compare v1 v2) xs
-			|> List.map fst
-		in
+		let xs = List.sort (fun (_, v1) (_, v2) -> compare v1 v2) xs in
 		xs, last
 
 	let last_id t = t.next - 1

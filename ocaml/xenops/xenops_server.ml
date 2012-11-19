@@ -1787,7 +1787,15 @@ module UPDATES = struct
 		Debug.with_thread_associated dbg
 			(fun () ->
 				(* debug "UPDATES.get %s %s" (Opt.default "None" (Opt.map string_of_int last)) (Opt.default "None" (Opt.map string_of_int timeout)); *)
-				Updates.get dbg last timeout updates
+				let u,v = Updates.get dbg last timeout updates in
+				let u = match last with
+					| Some i -> 
+						List.map (function 
+							| (Dynamic.Barrier (id,updates), z) -> (Dynamic.Barrier (id, List.filter (fun (uid,t) -> t >= i) updates), z)
+							| x -> x) u
+					| None -> u
+				in
+				(List.map fst u, v)
 			) ()
 
 	let last_id _ dbg =
@@ -1802,10 +1810,10 @@ module UPDATES = struct
 				let barrier_updates = 
 					let u,_ = Updates.get dbg None None updates in
 					List.filter (function
-						| Dynamic.Vm id -> id=vm_id
-						| Dynamic.Vbd (id,_) -> id=vm_id
-						| Dynamic.Vif (id,_) -> id=vm_id
-						| Dynamic.Pci (id,_) -> id=vm_id
+						| (Dynamic.Vm id,_) -> id=vm_id
+						| (Dynamic.Vbd (id,_),_) -> id=vm_id
+						| (Dynamic.Vif (id,_),_) -> id=vm_id
+						| (Dynamic.Pci (id,_),_) -> id=vm_id
 						| _ -> false (* Task and Barrier *)) u
 				in
 				debug "UPDATES.inject_barrier %s %d" vm_id id;

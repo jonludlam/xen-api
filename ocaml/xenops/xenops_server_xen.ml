@@ -122,6 +122,7 @@ let event_wait task timeout p =
 	let event_id = ref None in
 	while not !finished do
 		let deltas, next_id = Updates.get (Printf.sprintf "event_wait task %s" task.Xenops_task.id) !event_id timeout updates in
+		let deltas = List.map fst deltas in
 		if deltas = [] then finished := true;
 		List.iter (fun d -> if p d then (success := true; finished := true)) deltas;
 		event_id := Some next_id;
@@ -2071,7 +2072,7 @@ module VIF = struct
 end
 
 module UPDATES = struct
-	let get last timeout = Updates.get "UPDATES.get" last timeout updates
+	let get last timeout = let (u,v) = Updates.get "UPDATES.get" last timeout updates in (List.map fst u, v)
 end
 
 let _introduceDomain = "@introduceDomain"
