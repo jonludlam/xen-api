@@ -82,7 +82,7 @@ let with_session ~local rpc u p session f =
     (fun () -> f session)
     (fun () -> do_logout ())
 
-let do_rpcs req s username password minimal cmd session args =
+let do_rpcs req s username password minimal separator cmd session args =
   let cmdname = get_cmdname cmd in
   let cspec =
     try
@@ -103,7 +103,7 @@ let do_rpcs req s username password minimal cmd session args =
     then with_session ~local:false rpc username password session (fun sess -> forward args s (Some sess))
     else
       begin
-	let (printer,flush) = Cli_printer.make_printer s minimal in
+	let (printer,flush) = Cli_printer.make_printer s minimal separator in
 	let flush_and_marshall() = flush (); marshal s (Command(Exit 0)) in
 	begin
 	  match cspec.implementation with
@@ -129,7 +129,7 @@ let do_rpcs req s username password minimal cmd session args =
 	raise e
 
 let do_help cmd minimal s =
-  let (printer,flush)=Cli_printer.make_printer s minimal in
+  let (printer,flush)=Cli_printer.make_printer s minimal "," in
   cmd_help printer minimal cmd;
   flush ();
   marshal s (Command (Exit 0))
@@ -142,6 +142,11 @@ let exec_command req cmd s session args =
 		if (List.mem_assoc "minimal" params)
 		then bool_of_string (List.assoc "minimal" params)
 		else false in
+	let separator =
+		if (List.mem_assoc "separator" params)
+		then List.assoc "separator" params
+		else ","
+	in
 	let u = try List.assoc "username" params with _ -> "" in
 	let p = try List.assoc "password" params with _ -> "" in
 	let params = List.replace_assoc "password" "null" params in
@@ -160,7 +165,7 @@ let exec_command req cmd s session args =
 			do_log "xe %s %s" cmd_name (String.concat " " (List.map (fun (k, v) -> let v' = if k = "value" then "(omitted)" else v in k ^ "=" ^ v') params))
 		else
 			do_log "xe %s %s" cmd_name (String.concat " " (List.map (fun (k, v) -> k ^ "=" ^ v) params));
-		do_rpcs req s u p minimal cmd session args
+		do_rpcs req s u p minimal separator cmd session args
 
 let get_line str i =
   try

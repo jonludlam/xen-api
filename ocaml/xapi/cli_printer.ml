@@ -53,7 +53,7 @@ let escape_commas x =
 		] in
     Stringext.String.escaped ~rules x
 
-let make_printer sock minimal =
+let make_printer sock minimal separator =
 	let buffer = ref [] in
 
 	let multi_line_xapi_minimal pval =
@@ -62,10 +62,10 @@ let make_printer sock minimal =
 				if (List.length rs > 0) && (List.length (List.hd rs) > 0) then
 					let names = List.map (fun r -> snd (List.hd r)) rs in
 					let escaped_names = List.map escape_commas names in
-					buffer := (String.concat "," escaped_names) :: !buffer
+					buffer := (String.concat separator escaped_names) :: !buffer
 			| (PList ss) ->
 				let escaped_ss = List.map escape_commas ss in
-				buffer := (String.concat "," escaped_ss) :: !buffer
+				buffer := (String.concat separator escaped_ss) :: !buffer
 			| _ ->
 				()
 	in
@@ -83,7 +83,7 @@ let make_printer sock minimal =
 	in
 
 	let minimal_flush () =
-		marshal sock (Command(Print (String.concat "," (!buffer))))
+		marshal sock (Command(Print (String.concat separator (!buffer))))
 	in
 
 	let flush () =
