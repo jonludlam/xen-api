@@ -1,0 +1,10 @@
+--- a/Makefile
++++ b/Makefile
+@@ -85,6 +85,7 @@
+ 	omake install
+ 	omake lib-uninstall
+ 	omake lib-install
++	omake noarch-install
+ 
+ .PHONY: lib-install
+ lib-install:

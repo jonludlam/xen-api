@@ -1,0 +1,108 @@
+From: Mike McClurg <mike.mcclurg@citrix.com>
+Date: Fri, 9 Dec 2011 18:17:12 +0000
+Subject: fix-permissions
+
+---
+ ocaml/autogen/OMakefile          |    2 +-
+ ocaml/xe-cli/OMakefile           |    2 +-
+ ocaml/xe-cli/rt/OMakefile        |    2 +-
+ ocaml/xe-cli/rt/geneva/OMakefile |    6 ++++--
+ scripts/OMakefile                |   22 +++++++++++-----------
+ 5 files changed, 18 insertions(+), 16 deletions(-)
+ mode change 100755 => 100644 scripts/xapi-logrotate
+ mode change 100755 => 100644 scripts/xen-frontend.rules
+
+--- a/ocaml/autogen/OMakefile
++++ b/ocaml/autogen/OMakefile
+@@ -21,4 +21,4 @@
+ .PHONY: install
+ install:
+ 	mkdir -p $(DESTDIR)$(OPTDIR)/debug
+-	$(IPROG) rbac_static.csv $(DESTDIR)$(OPTDIR)/debug
++	$(IDATA) rbac_static.csv $(DESTDIR)$(OPTDIR)/debug
+--- a/ocaml/xe-cli/OMakefile
++++ b/ocaml/xe-cli/OMakefile
+@@ -104,7 +104,7 @@
+ 	mkdir -p $(DESTDIR)/usr/bin
+ 	ln -sf $(OPTDIR)/bin/xe $(DESTDIR)/usr/bin/xe
+ 	mkdir -p $(DESTDIR)/etc/bash_completion.d
+-	$(IPROG) bash-completion $(DESTDIR)/etc/bash_completion.d/xe
++	$(IDATA) bash-completion $(DESTDIR)/etc/bash_completion.d/xe
+ 
+ .PHONY: sdk-install
+ sdk-install: install
+--- a/ocaml/xe-cli/rt/OMakefile
++++ b/ocaml/xe-cli/rt/OMakefile
+@@ -31,5 +31,5 @@
+ 	cp gtmessages.ml gtcomms.ml gtlinuxops.ml gtserver_linux.ml /tmp/cli-rt-domu/root
+ 	(cd $(ROOT)/scripts; /bin/sh ./make-patch /tmp/cli-rt-domu /tmp/cli-rt-domu-shar.sh)
+ 	mkdir -p $(DESTDIR)$(OPTDIR)/debug
+-	mv /tmp/cli-rt-domu-shar.sh $(DESTDIR)$(OPTDIR)/debug
++	$(IPROG) /tmp/cli-rt-domu-shar.sh $(DESTDIR)$(OPTDIR)/debug
+ 	$(IPROG) install-debian-pv.sh install-debian-pv-inside.sh $(DESTDIR)$(OPTDIR)/debug
+--- a/ocaml/xe-cli/rt/geneva/OMakefile
++++ b/ocaml/xe-cli/rt/geneva/OMakefile
+@@ -15,10 +15,12 @@
+ .PHONY: install
+ install:
+ 	mkdir -p $(DESTDIR)$(OPTDIR)/debug
+-	$(IPROG) cli_test sm_stress myfirstpatch.asc $(DESTDIR)$(OPTDIR)/debug
++	$(IDATA) myfirstpatch.asc $(DESTDIR)$(OPTDIR)/debug
++	$(IPROG) cli_test sm_stress $(DESTDIR)$(OPTDIR)/debug
+ 
+ .PHONY: install
+ install:
+ 	rm -rf $(DIST)/cli-regress-geneva
+ 	mkdir -p $(DIST)/cli-regress-geneva
+-	$(IPROG) cli_test sm_stress license.txt myfirstpatch.asc pwfile_unix.txt pwfile_windows.txt $(DIST)/cli-regress-geneva
++	$(IDATA) myfirstpatch.asc license.txt pwfile_unix.txt pwfile_windows.txt $(DIST)/cli-regress-geneva
++	$(IPROG) cli_test sm_stress $(DIST)/cli-regress-geneva
+--- a/scripts/OMakefile
++++ b/scripts/OMakefile
+@@ -6,8 +6,8 @@
+ 
+ noarch-install:
+ 	mkdir -p $(DESTDIR)$(UDEVDIR)
+-	$(IPROG) xen-backend.rules $(DESTDIR)$(UDEVDIR)
+-	$(IPROG) xen-frontend.rules $(DESTDIR)$(UDEVDIR)
++	$(IDATA) xen-backend.rules $(DESTDIR)$(UDEVDIR)
++	$(IDATA) xen-frontend.rules $(DESTDIR)$(UDEVDIR)
+ 	mkdir -p $(DESTDIR)$(UDEVDIR)/rules.d
+ 	sh -c \
+ 	'cd $(DESTDIR)$(UDEVDIR)/rules.d; \
+@@ -45,18 +45,18 @@
+ 	$(IPROG) xapi-health-check $(DESTDIR)$(LIBEXECDIR)
+ 	$(IPROG) license-check.py $(DESTDIR)$(LIBEXECDIR)
+ 	$(IPROG) mail-alarm $(DESTDIR)$(LIBEXECDIR)
+-	$(IPROG) audit-logrotate $(DESTDIR)/etc/logrotate.d/audit
+-	$(IPROG) xapi-logrotate $(DESTDIR)/etc/logrotate.d/xapi
++	$(IDATA) audit-logrotate $(DESTDIR)/etc/logrotate.d/audit
++	$(IDATA) xapi-logrotate $(DESTDIR)/etc/logrotate.d/xapi
+ 	$(IPROG) xapi-wait-init-complete $(DESTDIR)$(BINDIR)
+ 	$(IPROG) xapi-autostart-vms $(DESTDIR)$(BINDIR)
+-	$(IPROG) udhcpd.skel $(DESTDIR)$(VARDIR)/udhcpd.skel
++	$(IDATA) udhcpd.skel $(DESTDIR)$(VARDIR)/udhcpd.skel
+ 	$(IDATA) xapi.conf $(DESTDIR)$(XAPICONF)
+ 	$(IDATA) sparse_dd.conf $(DESTDIR)/etc/sparse_dd.conf
+ 	$(IDATA) xcp-rrdd.conf $(DESTDIR)/etc/xcp-rrdd.conf
+ 	$(IDATA) xenopsd.conf $(DESTDIR)/etc/xenopsd.conf
+ 	$(IDATA) squeezed.conf $(DESTDIR)/etc/squeezed.conf
+-	$(IPROG) db.conf.skel $(DESTDIR)$(ETCDIR)/db.conf
+-	$(IPROG) rio.db.conf.skel $(DESTDIR)$(ETCDIR)/db.conf.rio
++	$(IDATA) db.conf.skel $(DESTDIR)$(ETCDIR)/db.conf
++	$(IDATA) rio.db.conf.skel $(DESTDIR)$(ETCDIR)/db.conf.rio
+ 	mkdir -p $(DESTDIR)/etc/init.d
+ 	mkdir -p $(DESTDIR)/etc/rc.d/init.d
+ 	$(IPROG) init.d-xenservices $(DESTDIR)/etc/rc.d/init.d/xenservices
+@@ -90,9 +90,9 @@
+ 	$(IPROG) xe-get-network-backend $(DESTDIR)$(BINDIR)
+ 	$(IPROG) static-vdis $(DESTDIR)$(BINDIR)
+ 	$(IPROG) with-vdi $(DESTDIR)$(OPTDIR)/debug
+-	$(IPROG) pool.conf $(DESTDIR)$(ETCDIR)
++	$(IDATA) pool.conf $(DESTDIR)$(ETCDIR)
+ 	mkdir -p $(DESTDIR)/etc/pam.d
+-	$(IPROG) pam.d-xapi $(DESTDIR)/etc/pam.d/xapi
++	$(IDATA) pam.d-xapi $(DESTDIR)/etc/pam.d/xapi
+ 	$(IPROG) qemu-dm-wrapper vncterm-wrapper upload-wrapper logs-download $(DESTDIR)$(LIBEXECDIR)
+ 	mkdir -p $(DESTDIR)$(OPTDIR)/packages/iso #omg XXX
+ 	$(IPROG) interface-reconfigure $(DESTDIR)$(LIBEXECDIR)

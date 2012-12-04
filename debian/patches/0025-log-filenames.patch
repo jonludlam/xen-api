@@ -1,0 +1,64 @@
+From: Jon Ludlam <jonathan.ludlam@eu.citrix.com>
+Date: Fri, 9 Dec 2011 16:31:29 +0000
+Subject: log-filenames
+
+---
+ ocaml/license/v6testd.ml   |    2 +-
+ ocaml/xapi/audit_log.ml    |    6 +++---
+ ocaml/xenops/squeezed.ml   |    2 +-
+ scripts/audit-logrotate    |    2 +-
+ scripts/log.conf           |   10 +++++-----
+ scripts/squeezed-logrotate |    2 +-
+ scripts/v6d-logrotate      |    2 +-
+ scripts/xapi-logrotate     |    2 +-
+ 8 files changed, 14 insertions(+), 14 deletions(-)
+
+--- a/ocaml/xapi/audit_log.ml
++++ b/ocaml/xapi/audit_log.ml
+@@ -18,7 +18,7 @@
+ open Stringext
+ open Pervasiveext
+ 
+-let audit_log_whitelist_prefix = "/var/log/audit.log"
++let audit_log_whitelist_prefix = "/var/log/xcp-audit.log"
+ 
+ let line_timestamp_length = 21 (* the timestamp length at the debug line *)
+ 
+@@ -105,11 +105,11 @@
+ 		ignore_exn (fun ()->atransfer infix "gz");(* try the compressed file *)
+ 		ignore_exn (fun ()->atransfer infix "") (* then the uncompressed one *)
+ 	in
+-	(* go through audit.log.n->0 first, ascending order of time *)
++	(* go through xcp-audit.log.n->0 first, ascending order of time *)
+ 	for i=100 downto 0 do
+ 		atransfer_try_gz (string_of_int i)
+ 	done;
+-	(* finally transfer /var/log/audit.log (the latest one in time) *)
++	(* finally transfer /var/log/xcp-audit.log (the latest one in time) *)
+ 	atransfer_try_gz ""
+ 
+ 
+--- a/scripts/audit-logrotate
++++ b/scripts/audit-logrotate
+@@ -1,4 +1,4 @@
+-/var/log/audit.log {
++/var/log/xcp-audit.log {
+     missingok
+     sharedscripts
+     postrotate
+--- a/scripts/v6d-logrotate
++++ b/scripts/v6d-logrotate
+@@ -1,4 +1,4 @@
+-/var/log/v6d.log {
++/var/log/xcp-v6d.log {
+     missingok
+     notifempty
+     size 30k
+--- a/scripts/xapi-logrotate
++++ b/scripts/xapi-logrotate
+@@ -1,4 +1,4 @@
+-/var/log/xensource.log {
++/var/log/xcp-xapi.log {
+     missingok
+ 	size 16M
+     sharedscripts
