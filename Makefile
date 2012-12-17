@@ -1,3 +1,4 @@
+#hello
 ifdef B_BASE
 include $(B_BASE)/common.mk
 include $(B_BASE)/rpmbuild.mk
