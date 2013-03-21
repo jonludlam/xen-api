@@ -198,6 +198,9 @@ rm -rf $RPM_BUILD_ROOT
 %post v6d
 [ ! -x /sbin/chkconfig ] || chkconfig --add v6d
 
+%post fe
+[ ! -x /sbin/chkconfig ] || chkconfig --add fe
+
 %files core -f core-files
 %defattr(-,root,root,-)
 @OPTDIR@/bin/xapi
@@ -258,6 +261,8 @@ rm -rf $RPM_BUILD_ROOT
 @OPTDIR@/bin/xe-set-iscsi-iqn
 @OPTDIR@/bin/xe-toolstack-restart
 @OPTDIR@/bin/xe-xentrace
+@OPTDIR@/bin/xe-switch-network-backend
+/etc/bash_completion.d/xe-switch-network-backend
 @OPTDIR@/bin/xsh
 /etc/xensource/bugtool/xapi.xml
 /etc/xensource/bugtool/xapi/stuff.xml
