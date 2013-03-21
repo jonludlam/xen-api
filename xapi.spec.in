@@ -133,7 +133,7 @@ export OPAMROOT=/usr/local/opam
 eval `opam config -env`
 opam remote add dev opam-repo-dev || true
 opam update
-opam install -y cdrom fd-send-recv forkexecd libvhd nbd netdev oclock ounit rpc ssl stdext syslog tapctl xen-api-libs-transitional xenctrl xenstore
+opam install -y cdrom fd-send-recv forkexecd libvhd nbd netdev oclock ounit rpc ssl stdext syslog tapctl xen-api-libs-transitional xenctrl xenstore squeezed
 
 COMPILE_JAVA=no %{__make}
 
@@ -171,6 +171,7 @@ mkdir -p $RPM_BUILD_ROOT/etc/rc.d/init.d
 cp /usr/local/opam/system/etc/init.d/fe $RPM_BUILD_ROOT/etc/rc.d/init.d/fe
 mkdir -p $RPM_BUILD_ROOT/opt/xensource/libexec
 cp /usr/local/opam/system/bin/xcp-fe $RPM_BUILD_ROOT/opt/xensource/libexec/fe
+cp /usr/local/opam/system/bin/squeezed $RPM_BUILD_ROOT/opt/xensource/libexec/squeezed
 
 %clean
 rm -rf $RPM_BUILD_ROOT
