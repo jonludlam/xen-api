@@ -53,7 +53,7 @@ let xencenter_max_verstring = "1.10"
 
 (* linux pack vsn key in host.software_version (used for a pool join restriction *)
 let linux_pack_vsn_key = "xs:linux"
-let packs_dir = Filename.concat Fhs.etcdir "installed-repos"
+let packs_dir = Filename.concat "/etc/xcp" "installed-repos"
 
 let ssl_pid = ref 0
 
@@ -87,11 +87,11 @@ let xe_path = Filename.concat Fhs.bindir "xe"
 let sm_dir = Filename.concat Fhs.optdir "sm"
 
 let config_file = ref Fhs.xapiconf
-let log_config_file = ref (Filename.concat Fhs.etcdir "log.conf")
-let db_conf_path = Filename.concat Fhs.etcdir "db.conf"
-let remote_db_conf_fragment_path = Filename.concat Fhs.etcdir "remote.db.conf"
+let log_config_file = ref (Filename.concat "/etc/xcp" "log.conf")
+let db_conf_path = Filename.concat "/etc/xcp" "db.conf"
+let remote_db_conf_fragment_path = Filename.concat "/etc/xcp" "remote.db.conf"
 let simulator_config_file = ref "/etc/XenServer-simulator.conf"
-let cpu_info_file = Filename.concat Fhs.etcdir "boot_time_cpus"
+let cpu_info_file = Filename.concat "/etc/xcp" "boot_time_cpus"
 let initial_host_free_memory_file = "/var/run/nonpersistent/xapi/boot_time_memory"
 let using_rrds = ref false
 
@@ -266,7 +266,7 @@ let backup_db_xml = Filename.concat "/var/lib/xcp" "state-backup.xml"
 
 (* Directory containing scripts which are executed when a node becomes master
    and when a node gives up the master role *)
-let master_scripts_dir = Filename.concat Fhs.etcdir "master.d"
+let master_scripts_dir = Filename.concat "/etc/xcp" "master.d"
 
 (* Indicates whether we should allow clones of suspended VMs via VM.clone *)
 let pool_allow_clone_suspended_vm = "allow_clone_suspended_vm"

@@ -278,7 +278,7 @@ let sync () =
       | Success(output, _) -> ()
 
 let patch_header_length = 8
-let skip_signature_flag = Filename.concat Fhs.etcdir "skipsignature"
+let skip_signature_flag = Filename.concat "/etc/xcp" "skipsignature"
 
 let update_upload_pre_script = Filename.concat Fhs.libexecdir "update-upload-pre"
 let update_upload_post_script = Filename.concat Fhs.libexecdir "update-upload-post"

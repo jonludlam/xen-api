@@ -124,7 +124,7 @@ let storage_migrate_vdi_map_key = "maps_to"
 let storage_migrate_vif_map_key = "maps_to"
 
 (* Path to the pool configuration file. *)
-let pool_config_file = Filename.concat Fhs.etcdir "pool.conf"
+let pool_config_file = Filename.concat "/etc/xcp" "pool.conf"
 
 (* Path to the pool secret file. *)
-let pool_secret_path = Filename.concat Fhs.etcdir "ptoken"
+let pool_secret_path = Filename.concat "/etc/xcp" "ptoken"
