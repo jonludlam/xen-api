@@ -1174,8 +1174,8 @@ let _ =
 
   (* chdir to @VARDIR@/debug so that's where xapi coredumps go 
      (in the unlikely event that there are any ;) *)
-  Unixext.mkdir_rec (Filename.concat Fhs.vardir "debug") 0o700;
-  Unix.chdir (Filename.concat Fhs.vardir "debug");
+  Unixext.mkdir_rec (Filename.concat "/var/lib/xcp" "debug") 0o700;
+  Unix.chdir (Filename.concat "/var/lib/xcp" "debug");
 
 	set_thread_queue_params ();
 

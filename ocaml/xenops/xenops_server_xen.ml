@@ -254,7 +254,7 @@ module Storage = struct
 			let open Xmlrpc_client in
 			retry_econnrefused
 				(fun () ->
-					XMLRPC_protocol.rpc ~srcstr:"xenops" ~dststr:"smapiv2" ~transport:(Unix (Filename.concat Fhs.vardir "storage")) ~http:(xmlrpc ~version:"1.0" "/") call
+					XMLRPC_protocol.rpc ~srcstr:"xenops" ~dststr:"smapiv2" ~transport:(Unix (Filename.concat "/var/lib/xcp" "storage")) ~http:(xmlrpc ~version:"1.0" "/") call
 				)
 	end)
 

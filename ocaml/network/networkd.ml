@@ -23,7 +23,7 @@ open D
 
 let server = Http_svr.Server.empty ()
 
-let path = Filename.concat Fhs.vardir name
+let path = Filename.concat "/var/lib/xcp" name
 
 module Server = Network_interface.Server(Network_server)
 
