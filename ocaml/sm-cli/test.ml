@@ -23,10 +23,10 @@ open Stringext
 open Xmlrpc_client
 
 
-let default_storage_path = Filename.concat Fhs.vardir "storage"
-let default_xapi_path = Filename.concat Fhs.vardir "xapi"
-let default_remote_storage_path = Filename.concat Fhs.vardir "storage"
-let default_remote_xapi_path = Filename.concat Fhs.vardir "xapi"
+let default_storage_path = Filename.concat "/var/lib/xcp" "storage"
+let default_xapi_path = Filename.concat "/var/lib/xcp" "xapi"
+let default_remote_storage_path = Filename.concat "/var/lib/xcp" "storage"
+let default_remote_xapi_path = Filename.concat "/var/lib/xcp" "xapi"
 
 let transport = ref (Unix default_storage_path)
 let xtransport = ref (Unix default_xapi_path)

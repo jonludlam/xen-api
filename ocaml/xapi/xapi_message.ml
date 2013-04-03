@@ -19,13 +19,13 @@
 (** Message store *)
 
 (* We use a filesystem based 'database': 
- *  Base directory: @VARDIR@/blobs/messages
+ *  Base directory: /var/lib/xcp/blobs/messages
  *  All messages go in there, filename=timestamp
  *  
  *  Symlinks are created to the messages for fast indexing:
- *  @VARDIR@/blobs/messages/VM/<uuid>/<timestamp> -> message
- *  @VARDIR@/blobs/messages/uuid/<message uuid> -> message
- *  @VARDIR@/blobs/messages/ref/<message ref> -> message
+ *  /var/lib/xcp/blobs/messages/VM/<uuid>/<timestamp> -> message
+ *  /var/lib/xcp/blobs/messages/uuid/<message uuid> -> message
+ *  /var/lib/xcp/blobs/messages/ref/<message ref> -> message
  *)
 
 open Listext   
