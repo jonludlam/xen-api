@@ -423,6 +423,15 @@ let rec cmdtable_data : (string*cmd_spec) list =
       flags=[];
     };
 
+   "host-declare-dead",
+    {
+      reqd=["uuid"];
+      optn=[];
+      help="Declare that the the host is dead without contacting it explicitly. WARNING: This call is dangerous and can cause data loss if the host is not actually dead";
+      implementation=With_fd Cli_operations.host_declare_dead;
+      flags=[];
+    };
+
    "host-disable",
     {
       reqd=[];
@@ -485,6 +494,15 @@ let rec cmdtable_data : (string*cmd_spec) list =
 		implementation=No_fd Cli_operations.pool_disable_local_storage_caching;
 		flags=[];
 	};
+
+		"pool-apply-edition",
+		{
+			reqd=["edition"];
+			optn=["uuid"];
+			help="Apply an edition across the pool";
+			implementation=No_fd Cli_operations.pool_apply_edition;
+			flags=[];
+		};
 
    "host-shutdown",
     {
@@ -2352,22 +2370,6 @@ add a mapping of 'path' -> '/tmp', the command line should contain the argument 
 			; implementation = No_fd Cli_operations.secret_destroy
 			; flags = []
 			};
-    "vmpp-create",
-    {
-      reqd=["name-label";"backup-type";"backup-frequency"];
-      optn=["name-description";"is-policy-enabled";"backup-schedule:";"backup-retention-value";"archive-target-type";"archive-target-config:";"archive-frequency";"archive-schedule:";"is-alarm-enabled";"alarm-config:"];
-      help="Create a new VM protection policy.";
-      implementation=No_fd Cli_operations.vmpp_create;
-      flags=[];
-    };
-    "vmpp-destroy",
-    {
-      reqd=["uuid"];
-      optn=[];
-      help="Destroy a VM protection policy.";
-      implementation=No_fd Cli_operations.vmpp_destroy;
-      flags=[];
-    };
 		"appliance-create",
 		{
 			reqd=["name-label"];

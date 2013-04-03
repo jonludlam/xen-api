@@ -346,7 +346,7 @@ let _ =
   error Api_errors.message_deprecated []
     ~doc:"This message has been deprecated." ();
   error Api_errors.message_removed []
-    ~doc:"This message has been removed." ();
+    ~doc:"This function is no longer available." ();
 
   error Api_errors.permission_denied ["message"]
     ~doc:"Caller not allowed to perform this operation." ();
@@ -2712,6 +2712,14 @@ let host_detach_static_vdis = call
   ~allowed_roles:_R_LOCAL_ROOT_ONLY
   ()
 
+let host_declare_dead = call
+  ~name:"declare_dead"
+	~in_product_since:rel_clearwater
+  ~doc:"Declare that a host is dead. This is a dangerous operation, and should only be called if the administrator is absolutely sure the host is definitely dead"
+  ~params:[Ref _host, "host", "The Host to declare is dead"]
+  ~allowed_roles:_R_POOL_OP
+  ()
+
 let host_forget_data_source_archives = call
   ~name:"forget_data_source_archives"
   ~in_oss_since:None
@@ -4185,6 +4193,7 @@ let host =
 		 host_sync_tunnels;
 		 host_sync_pif_currently_attached;
 		 host_migrate_receive;
+		 host_declare_dead;
 		 ]
       ~contents:
         ([ uid _host;
@@ -6164,6 +6173,28 @@ let pool_disable_local_storage_caching = call
 	~allowed_roles:_R_POOL_OP
 	()
 
+let pool_get_license_state = call
+	~name:"get_license_state"
+	~in_oss_since:None
+	~in_product_since:rel_clearwater
+	~params:[Ref _pool, "self", "Reference to the pool"]
+	~doc:"This call returns the license state for the pool"
+	~allowed_roles:_R_READ_ONLY
+	~result:(Map(String,String), "The pool's license state")
+	()
+
+let pool_apply_edition = call
+	~name:"apply_edition"
+	~in_oss_since:None
+	~in_product_since:rel_clearwater
+	~params:[
+		Ref _pool, "self", "Reference to the pool";
+		String, "edition", "The requested edition";
+	]
+	~doc:"Apply an edition to all hosts in the pool"
+	~allowed_roles:_R_POOL_OP
+	()
+
 (** A pool class *)
 let pool =
 	create_obj
@@ -6228,6 +6259,8 @@ let pool =
 			; pool_test_archive_target
 			; pool_enable_local_storage_caching
 			; pool_disable_local_storage_caching
+			; pool_get_license_state
+			; pool_apply_edition
 			]
 		~contents:
 			[uid ~in_oss_since:None _pool
@@ -6697,8 +6730,8 @@ let vm =
 	field ~writer_roles:_R_VM_POWER_ADMIN ~qualifier:DynamicRO ~in_product_since:rel_midnight_ride                                 ~ty:(Set (Ref _vm)) "children"     "List pointing to all the children of this VM";
 
 	field ~qualifier:DynamicRO ~in_product_since:rel_midnight_ride ~default_value:(Some (VMap [])) ~ty:(Map (String,String)) "bios_strings" "BIOS strings";
-	field ~writer_roles:_R_VM_POWER_ADMIN ~qualifier:StaticRO ~in_product_since:rel_cowley ~default_value:(Some (VRef (Ref.string_of Ref.null))) ~ty:(Ref _vmpp) "protection_policy" "Ref pointing to a protection policy for this VM";
-	field ~writer_roles:_R_POOL_OP ~qualifier:StaticRO ~in_product_since:rel_cowley ~default_value:(Some (VBool false)) ~ty:Bool "is_snapshot_from_vmpp" "true if this snapshot was created by the protection policy";
+	field ~writer_roles:_R_VM_POWER_ADMIN ~qualifier:StaticRO ~lifecycle:[Published, rel_cowley, ""; Deprecated, rel_clearwater, "The VMPR feature was removed"] ~default_value:(Some (VRef (Ref.string_of Ref.null))) ~ty:(Ref _vmpp) "protection_policy" "Ref pointing to a protection policy for this VM";
+	field ~writer_roles:_R_POOL_OP ~qualifier:StaticRO ~lifecycle:[Published, rel_cowley, ""; Deprecated, rel_clearwater, "The VMPR feature was removed"] ~default_value:(Some (VBool false)) ~ty:Bool "is_snapshot_from_vmpp" "true if this snapshot was created by the protection policy";
 	field ~writer_roles:_R_POOL_OP ~qualifier:StaticRO ~ty:(Ref _vm_appliance) ~default_value:(Some (VRef (Ref.string_of Ref.null))) "appliance" "the appliance to which this VM belongs";
 	field ~writer_roles:_R_POOL_OP ~qualifier:StaticRO ~in_product_since:rel_boston ~default_value:(Some (VInt 0L)) ~ty:Int "start_delay" "The delay to wait before proceeding to the next order in the startup sequence (seconds)";
 	field ~writer_roles:_R_POOL_OP ~qualifier:StaticRO ~in_product_since:rel_boston ~default_value:(Some (VInt 0L)) ~ty:Int "shutdown_delay" "The delay to wait before proceeding to the next order in the shutdown sequence (seconds)";
@@ -6767,10 +6800,13 @@ let vm_guest_metrics =
     ()
 
 (* VM protection policy *)
+let vmpr_removed = [
+  Published, rel_cowley, "";
+  Removed, rel_clearwater, "The VMPR feature was removed";
+]
 let vmpp_protect_now = call ~flags:[`Session]
   ~name:"protect_now"
-  ~in_oss_since:None
-  ~in_product_since:rel_cowley
+  ~lifecycle:vmpr_removed
   ~params:[Ref _vmpp, "vmpp", "The protection policy to execute";]
   ~doc:"This call executes the protection policy immediately"
   ~allowed_roles:_R_POOL_OP
@@ -6778,8 +6814,7 @@ let vmpp_protect_now = call ~flags:[`Session]
   ()
 let vmpp_archive_now = call ~flags:[`Session]
   ~name:"archive_now"
-  ~in_oss_since:None
-  ~in_product_since:rel_cowley
+  ~lifecycle:vmpr_removed
   ~params:[Ref _vm, "snapshot", "The snapshot to archive";]
   ~doc:"This call archives the snapshot provided as a parameter"
   ~allowed_roles:_R_VM_POWER_ADMIN
@@ -6787,8 +6822,7 @@ let vmpp_archive_now = call ~flags:[`Session]
   ()
 let vmpp_create_alert = call ~flags:[`Session]
   ~name:"create_alert"
-  ~in_oss_since:None
-  ~in_product_since:rel_cowley
+  ~lifecycle:vmpr_removed
   ~params:[Ref _vmpp, "vmpp", "The protection policy where the alert should be created";
      String, "name", "The name of the message";
 	   Int, "priority", "The priority of the message";
@@ -6801,8 +6835,7 @@ let vmpp_create_alert = call ~flags:[`Session]
   ()
 let vmpp_get_alerts = call ~flags:[`Session]
   ~name:"get_alerts"
-  ~in_oss_since:None
-  ~in_product_since:rel_cowley
+  ~lifecycle:vmpr_removed
   ~params:[Ref _vmpp, "vmpp", "The protection policy";
     Int, "hours_from_now", "how many hours in the past the oldest record to fetch is";
   ]
@@ -6842,8 +6875,7 @@ let vmpp_archive_target_config_username = "username"
 let vmpp_archive_target_config_password = "password"
 let vmpp_set_backup_retention_value = call ~flags:[`Session]
   ~name:"set_backup_retention_value"
-  ~in_oss_since:None
-  ~in_product_since:rel_cowley
+  ~lifecycle:vmpr_removed
   ~allowed_roles:_R_POOL_OP
   ~params:[
     Ref _vmpp, "self", "The protection policy";
@@ -6852,8 +6884,7 @@ let vmpp_set_backup_retention_value = call ~flags:[`Session]
   ()
 let vmpp_set_is_backup_running = call ~flags:[`Session]
   ~name:"set_is_backup_running"
-  ~in_oss_since:None
-  ~in_product_since:rel_cowley
+  ~lifecycle:vmpr_removed
   ~params:[
     Ref _vmpp, "self", "The protection policy";
     Bool, "value", "true to mark this protection policy's backup is running"
@@ -6864,8 +6895,7 @@ let vmpp_set_is_backup_running = call ~flags:[`Session]
   ()
 let vmpp_set_is_archive_running = call ~flags:[`Session]
   ~name:"set_is_archive_running"
-  ~in_oss_since:None
-  ~in_product_since:rel_cowley
+  ~lifecycle:vmpr_removed
   ~params:[
     Ref _vmpp, "self", "The protection policy";
     Bool, "value", "true to mark this protection policy's archive is running"
@@ -6876,8 +6906,7 @@ let vmpp_set_is_archive_running = call ~flags:[`Session]
   ()
 let vmpp_set_is_alarm_enabled = call ~flags:[`Session]
   ~name:"set_is_alarm_enabled"
-  ~in_oss_since:None
-  ~in_product_since:rel_cowley
+  ~lifecycle:vmpr_removed
   ~params:[
     Ref _vmpp, "self", "The protection policy";
     Bool, "value", "true if alarm is enabled for this policy"
@@ -6887,8 +6916,7 @@ let vmpp_set_is_alarm_enabled = call ~flags:[`Session]
   ()
 let vmpp_set_archive_frequency = call ~flags:[`Session]
   ~name:"set_archive_frequency"
-  ~in_oss_since:None
-  ~in_product_since:rel_cowley
+  ~lifecycle:vmpr_removed
   ~params:[
     Ref _vmpp, "self", "The protection policy";
     vmpp_archive_frequency, "value", "the archive frequency"
@@ -6898,8 +6926,7 @@ let vmpp_set_archive_frequency = call ~flags:[`Session]
   ()
 let vmpp_set_archive_target_type = call ~flags:[`Session]
   ~name:"set_archive_target_type"
-  ~in_oss_since:None
-  ~in_product_since:rel_cowley
+  ~lifecycle:vmpr_removed
   ~params:[
     Ref _vmpp, "self", "The protection policy";
     vmpp_archive_target_type, "value", "the archive target config type"
@@ -6909,8 +6936,7 @@ let vmpp_set_archive_target_type = call ~flags:[`Session]
   ()
 let vmpp_set_backup_frequency = call ~flags:[`Session]
   ~name:"set_backup_frequency"
-  ~in_oss_since:None
-  ~in_product_since:rel_cowley
+  ~lifecycle:vmpr_removed
   ~params:[
     Ref _vmpp, "self", "The protection policy";
     vmpp_backup_frequency, "value", "the backup frequency"
@@ -6920,8 +6946,7 @@ let vmpp_set_backup_frequency = call ~flags:[`Session]
   ()
 let vmpp_set_backup_schedule = call ~flags:[`Session]
   ~name:"set_backup_schedule"
-  ~in_oss_since:None
-  ~in_product_since:rel_cowley
+  ~lifecycle:vmpr_removed
   ~allowed_roles:_R_POOL_OP
   ~params:[
     Ref _vmpp, "self", "The protection policy";
@@ -6930,8 +6955,7 @@ let vmpp_set_backup_schedule = call ~flags:[`Session]
   ()
 let vmpp_set_archive_target_config = call ~flags:[`Session]
   ~name:"set_archive_target_config"
-  ~in_oss_since:None
-  ~in_product_since:rel_cowley
+  ~lifecycle:vmpr_removed
   ~allowed_roles:_R_POOL_OP
   ~params:[
     Ref _vmpp, "self", "The protection policy";
@@ -6940,8 +6964,7 @@ let vmpp_set_archive_target_config = call ~flags:[`Session]
   ()
 let vmpp_set_archive_schedule = call ~flags:[`Session]
   ~name:"set_archive_schedule"
-  ~in_oss_since:None
-  ~in_product_since:rel_cowley
+  ~lifecycle:vmpr_removed
   ~allowed_roles:_R_POOL_OP
   ~params:[
     Ref _vmpp, "self", "The protection policy";
@@ -6950,8 +6973,7 @@ let vmpp_set_archive_schedule = call ~flags:[`Session]
   ()
 let vmpp_set_alarm_config = call ~flags:[`Session]
   ~name:"set_alarm_config"
-  ~in_oss_since:None
-  ~in_product_since:rel_cowley
+  ~lifecycle:vmpr_removed
   ~allowed_roles:_R_POOL_OP
   ~params:[
     Ref _vmpp, "self", "The protection policy";
@@ -6960,8 +6982,7 @@ let vmpp_set_alarm_config = call ~flags:[`Session]
   ()
 let vmpp_set_backup_last_run_time = call ~flags:[`Session]
   ~name:"set_backup_last_run_time"
-  ~in_oss_since:None
-  ~in_product_since:rel_cowley
+  ~lifecycle:vmpr_removed
   ~allowed_roles:_R_LOCAL_ROOT_ONLY
   ~params:[
     Ref _vmpp, "self", "The protection policy";
@@ -6970,8 +6991,7 @@ let vmpp_set_backup_last_run_time = call ~flags:[`Session]
   ()
 let vmpp_set_archive_last_run_time = call ~flags:[`Session]
   ~name:"set_archive_last_run_time"
-  ~in_oss_since:None
-  ~in_product_since:rel_cowley
+  ~lifecycle:vmpr_removed
   ~allowed_roles:_R_LOCAL_ROOT_ONLY
   ~params:[
     Ref _vmpp, "self", "The protection policy";
@@ -6980,8 +7000,7 @@ let vmpp_set_archive_last_run_time = call ~flags:[`Session]
   ()
 let vmpp_add_to_backup_schedule = call ~flags:[`Session]
   ~name:"add_to_backup_schedule"
-  ~in_oss_since:None
-  ~in_product_since:rel_cowley
+  ~lifecycle:vmpr_removed
   ~allowed_roles:_R_POOL_OP
   ~params:[
     Ref _vmpp, "self", "The protection policy";
@@ -6991,8 +7010,7 @@ let vmpp_add_to_backup_schedule = call ~flags:[`Session]
   ()
 let vmpp_add_to_archive_target_config = call ~flags:[`Session]
   ~name:"add_to_archive_target_config"
-  ~in_oss_since:None
-  ~in_product_since:rel_cowley
+  ~lifecycle:vmpr_removed
   ~allowed_roles:_R_POOL_OP
   ~params:[
     Ref _vmpp, "self", "The protection policy";
@@ -7002,8 +7020,7 @@ let vmpp_add_to_archive_target_config = call ~flags:[`Session]
   ()
 let vmpp_add_to_archive_schedule = call ~flags:[`Session]
   ~name:"add_to_archive_schedule"
-  ~in_oss_since:None
-  ~in_product_since:rel_cowley
+  ~lifecycle:vmpr_removed
   ~allowed_roles:_R_POOL_OP
   ~params:[
     Ref _vmpp, "self", "The protection policy";
@@ -7013,8 +7030,7 @@ let vmpp_add_to_archive_schedule = call ~flags:[`Session]
   ()
 let vmpp_add_to_alarm_config = call ~flags:[`Session]
   ~name:"add_to_alarm_config"
-  ~in_oss_since:None
-  ~in_product_since:rel_cowley
+  ~lifecycle:vmpr_removed
   ~allowed_roles:_R_POOL_OP
   ~params:[
     Ref _vmpp, "self", "The protection policy";
@@ -7024,8 +7040,7 @@ let vmpp_add_to_alarm_config = call ~flags:[`Session]
   ()
 let vmpp_remove_from_backup_schedule = call ~flags:[`Session]
   ~name:"remove_from_backup_schedule"
-  ~in_oss_since:None
-  ~in_product_since:rel_cowley
+  ~lifecycle:vmpr_removed
   ~allowed_roles:_R_POOL_OP
   ~params:[
     Ref _vmpp, "self", "The protection policy";
@@ -7034,8 +7049,7 @@ let vmpp_remove_from_backup_schedule = call ~flags:[`Session]
   ()
 let vmpp_remove_from_archive_target_config = call ~flags:[`Session]
   ~name:"remove_from_archive_target_config"
-  ~in_oss_since:None
-  ~in_product_since:rel_cowley
+  ~lifecycle:vmpr_removed
   ~allowed_roles:_R_POOL_OP
   ~params:[
     Ref _vmpp, "self", "The protection policy";
@@ -7044,8 +7058,7 @@ let vmpp_remove_from_archive_target_config = call ~flags:[`Session]
   ()
 let vmpp_remove_from_archive_schedule = call ~flags:[`Session]
   ~name:"remove_from_archive_schedule"
-  ~in_oss_since:None
-  ~in_product_since:rel_cowley
+  ~lifecycle:vmpr_removed
   ~allowed_roles:_R_POOL_OP
   ~params:[
     Ref _vmpp, "self", "The protection policy";
@@ -7054,8 +7067,7 @@ let vmpp_remove_from_archive_schedule = call ~flags:[`Session]
   ()
 let vmpp_remove_from_alarm_config = call ~flags:[`Session]
   ~name:"remove_from_alarm_config"
-  ~in_oss_since:None
-  ~in_product_since:rel_cowley
+  ~lifecycle:vmpr_removed
   ~allowed_roles:_R_POOL_OP
   ~params:[
     Ref _vmpp, "self", "The protection policy";
@@ -7063,8 +7075,9 @@ let vmpp_remove_from_alarm_config = call ~flags:[`Session]
   ]
   ()
 let vmpp =
-  create_obj ~in_db:true ~in_product_since:rel_cowley ~in_oss_since:None ~internal_deprecated_since:None ~persist:PersistEverything ~gen_constructor_destructor:true ~name:_vmpp ~descr:"VM Protection Policy"
+  create_obj ~in_db:true ~in_oss_since:None ~persist:PersistEverything ~gen_constructor_destructor:true ~name:_vmpp ~descr:"VM Protection Policy"
     ~gen_events:true
+    ~lifecycle:vmpr_removed
     ~doccomments:[]
     ~messages_default_allowed_roles:_R_POOL_OP
     ~messages:[
@@ -7095,25 +7108,25 @@ let vmpp =
       vmpp_set_archive_last_run_time;
     ]
     ~contents:[
-      uid _vmpp;
+      uid ~lifecycle:vmpr_removed _vmpp;
       namespace ~name:"name" ~contents:(names None RW) ();
-      field ~qualifier:RW ~ty:Bool "is_policy_enabled" "enable or disable this policy" ~default_value:(Some (VBool true));
-      field ~qualifier:RW ~ty:vmpp_backup_type "backup_type" "type of the backup sub-policy";
-      field ~qualifier:StaticRO ~ty:Int "backup_retention_value" "maximum number of backups that should be stored at any time" ~default_value:(Some (VInt 7L));
-      field ~qualifier:StaticRO ~ty:vmpp_backup_frequency "backup_frequency" "frequency of the backup schedule";
-      field ~qualifier:StaticRO ~ty:(Map (String,String)) "backup_schedule" "schedule of the backup containing 'hour', 'min', 'days'. Date/time-related information is in XenServer Local Timezone";
-      field ~qualifier:DynamicRO ~ty:Bool "is_backup_running" "true if this protection policy's backup is running";
-      field ~qualifier:DynamicRO ~ty:DateTime "backup_last_run_time" "time of the last backup" ~default_value:(Some(VDateTime(Date.of_float 0.)));
-      field ~qualifier:StaticRO ~ty:vmpp_archive_target_type "archive_target_type" "type of the archive target config" ~default_value:(Some (VEnum "none"));
-      field ~qualifier:StaticRO ~ty:(Map (String,String)) "archive_target_config" "configuration for the archive, including its 'location', 'username', 'password'" ~default_value:(Some (VMap []));
-      field ~qualifier:StaticRO ~ty:vmpp_archive_frequency "archive_frequency" "frequency of the archive schedule" ~default_value:(Some (VEnum "never"));
-      field ~qualifier:StaticRO ~ty:(Map (String,String)) "archive_schedule" "schedule of the archive containing 'hour', 'min', 'days'. Date/time-related information is in XenServer Local Timezone" ~default_value:(Some (VMap []));
-      field ~qualifier:DynamicRO ~ty:Bool "is_archive_running" "true if this protection policy's archive is running";
-      field ~qualifier:DynamicRO ~ty:DateTime "archive_last_run_time" "time of the last archive" ~default_value:(Some(VDateTime(Date.of_float 0.)));
-      field ~qualifier:DynamicRO ~ty:(Set (Ref _vm)) "VMs" "all VMs attached to this protection policy";
-      field ~qualifier:StaticRO ~ty:Bool "is_alarm_enabled" "true if alarm is enabled for this policy" ~default_value:(Some (VBool false));
-      field ~qualifier:StaticRO ~ty:(Map (String,String)) "alarm_config" "configuration for the alarm" ~default_value:(Some (VMap []));
-      field ~qualifier:DynamicRO ~ty:(Set (String)) "recent_alerts" "recent alerts" ~default_value:(Some (VSet []));
+      field ~lifecycle:vmpr_removed ~qualifier:RW ~ty:Bool "is_policy_enabled" "enable or disable this policy" ~default_value:(Some (VBool true));
+      field ~lifecycle:vmpr_removed ~qualifier:RW ~ty:vmpp_backup_type "backup_type" "type of the backup sub-policy" ~default_value:(Some (VEnum "snapshot"));
+      field ~lifecycle:vmpr_removed ~qualifier:StaticRO ~ty:Int "backup_retention_value" "maximum number of backups that should be stored at any time" ~default_value:(Some (VInt 7L));
+      field ~lifecycle:vmpr_removed ~qualifier:StaticRO ~ty:vmpp_backup_frequency "backup_frequency" "frequency of the backup schedule" ~default_value:(Some (VEnum "daily"));
+      field ~lifecycle:vmpr_removed ~qualifier:StaticRO ~ty:(Map (String,String)) "backup_schedule" "schedule of the backup containing 'hour', 'min', 'days'. Date/time-related information is in XenServer Local Timezone" ~default_value:(Some (VMap []));
+      field ~lifecycle:vmpr_removed ~qualifier:DynamicRO ~ty:Bool "is_backup_running" "true if this protection policy's backup is running";
+      field ~lifecycle:vmpr_removed ~qualifier:DynamicRO ~ty:DateTime "backup_last_run_time" "time of the last backup" ~default_value:(Some(VDateTime(Date.of_float 0.)));
+      field ~lifecycle:vmpr_removed ~qualifier:StaticRO ~ty:vmpp_archive_target_type "archive_target_type" "type of the archive target config" ~default_value:(Some (VEnum "none"));
+      field ~lifecycle:vmpr_removed ~qualifier:StaticRO ~ty:(Map (String,String)) "archive_target_config" "configuration for the archive, including its 'location', 'username', 'password'" ~default_value:(Some (VMap []));
+      field ~lifecycle:vmpr_removed ~qualifier:StaticRO ~ty:vmpp_archive_frequency "archive_frequency" "frequency of the archive schedule" ~default_value:(Some (VEnum "never"));
+      field ~lifecycle:vmpr_removed ~qualifier:StaticRO ~ty:(Map (String,String)) "archive_schedule" "schedule of the archive containing 'hour', 'min', 'days'. Date/time-related information is in XenServer Local Timezone" ~default_value:(Some (VMap []));
+      field ~lifecycle:vmpr_removed ~qualifier:DynamicRO ~ty:Bool "is_archive_running" "true if this protection policy's archive is running";
+      field ~lifecycle:vmpr_removed ~qualifier:DynamicRO ~ty:DateTime "archive_last_run_time" "time of the last archive" ~default_value:(Some(VDateTime(Date.of_float 0.)));
+      field ~lifecycle:vmpr_removed ~qualifier:DynamicRO ~ty:(Set (Ref _vm)) "VMs" "all VMs attached to this protection policy";
+      field ~lifecycle:vmpr_removed ~qualifier:StaticRO ~ty:Bool "is_alarm_enabled" "true if alarm is enabled for this policy" ~default_value:(Some (VBool false));
+      field ~lifecycle:vmpr_removed ~qualifier:StaticRO ~ty:(Map (String,String)) "alarm_config" "configuration for the alarm" ~default_value:(Some (VMap []));
+      field ~lifecycle:vmpr_removed ~qualifier:DynamicRO ~ty:(Set (String)) "recent_alerts" "recent alerts" ~default_value:(Some (VSet []));
     ]
     ()
 
