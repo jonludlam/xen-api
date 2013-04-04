@@ -27,6 +27,7 @@ install:
 	mkdir -p $(DESTDIR)/etc/logrotate.d
 	mkdir -p $(DESTDIR)$(ETCDIR)/master.d
 	mkdir -p $(DESTDIR)$(LIBEXECDIR)
+	mkdir -p $(DESTDIR)/var/lib/xcp
 	$(IPROG) base-path $(DESTDIR)/etc/xapi.d
 	$(IPROG) sm_diagnostics $(DESTDIR)$(LIBEXECDIR)
 	$(IPROG) xn_diagnostics $(DESTDIR)$(LIBEXECDIR)
