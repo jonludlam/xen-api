@@ -276,7 +276,14 @@ let pif_record rpc session_id pif =
 	make_field ~name:"device-id" ~get:(fun () -> default nid (may (fun m -> m.API.pIF_metrics_device_id) (xm ()))) ();
 	make_field ~name:"device-name" ~get:(fun () -> default nid (may (fun m -> m.API.pIF_metrics_device_name) (xm ()))) ();
 	make_field ~name:"speed" ~get:(fun () -> default nid (may (fun m -> (Int64.to_string m.API.pIF_metrics_speed) ^ " Mbit/s") (xm ()))) ();
-	make_field ~name:"duplex" ~get:(fun () -> default nid (may (fun m -> if m.API.pIF_metrics_duplex then "full" else "half") (xm ()))) ();
+	make_field ~name:"duplex" ~get:(fun () -> default nid (may (fun m ->
+		if m.API.pIF_metrics_duplex then
+			"full"
+		else if m.API.pIF_metrics_carrier then
+			"half"
+		else
+			"unknown"
+		) (xm ()))) ();
 	make_field ~name:"disallow-unplug" ~get:(fun () -> string_of_bool ((x ()).API.pIF_disallow_unplug))
 	  ~set:(fun disallow_unplug -> Client.PIF.set_disallow_unplug rpc session_id pif (safe_bool_of_string "disallow-unplug" disallow_unplug)) ();
 	make_field ~name:"pci-bus-path" ~get:(fun () -> default nid (may (fun m -> m.API.pIF_metrics_pci_bus_path) (xm ()))) ();
@@ -468,10 +475,6 @@ let pool_record rpc session_id pool =
 			make_field ~name:"ha-allow-overcommit" ~get:(fun () -> string_of_bool (x ()).API.pool_ha_allow_overcommit) ~set:(fun x -> Client.Pool.set_ha_allow_overcommit rpc session_id pool (bool_of_string x)) ();
 			make_field ~name:"ha-overcommitted" ~get:(fun () -> string_of_bool (x ()).API.pool_ha_overcommitted) ();
 			make_field ~name:"blobs" ~get:(fun () -> Record_util.s2brm_to_string get_uuid_from_ref "; " (x ()).API.pool_blobs) ();
-			make_field ~name:"wlb-url" ~get:(fun () -> (x ()).API.pool_wlb_url) ();
-			make_field ~name:"wlb-username" ~get:(fun () -> (x ()).API.pool_wlb_username) ();
-			make_field ~name:"wlb-enabled" ~get:(fun () -> string_of_bool (x ()).API.pool_wlb_enabled) ~set:(fun x -> Client.Pool.set_wlb_enabled rpc session_id pool (bool_of_string x)) ();
-			make_field ~name:"wlb-verify-cert" ~get:(fun () -> string_of_bool (x ()).API.pool_wlb_verify_cert) ~set:(fun x -> Client.Pool.set_wlb_verify_cert rpc session_id pool (bool_of_string x)) ();
 			make_field ~name:"gui-config"
 				~get:(fun () -> Record_util.s2sm_to_string "; " (x ()).API.pool_gui_config)
 				~add_to_map:(fun k v -> Client.Pool.add_to_gui_config rpc session_id pool k v)
@@ -860,6 +863,8 @@ let vm_record rpc session_id vm =
 				~set:(fun x -> Client.VM.set_order rpc session_id vm (safe_i64_of_string "order" x)) ();
 			make_field ~name:"version"
 				~get:(fun () -> Int64.to_string (x ()).API.vM_version) ();
+			make_field ~name:"generation-id"
+				~get:(fun () -> (x ()).API.vM_generation_id) ();
 		]}
 
 let host_crashdump_record rpc session_id host = 

@@ -316,6 +316,10 @@ module VM : HandlerTools = struct
 						(List.filter (fun (x, _) -> x <> Xapi_globs.mac_seed) other_config) in
 			let vm_record = { vm_record with API.vM_other_config = other_config } in
 
+			(* An imported VM always needs a fresh generation ID *)
+			let vm_record =
+			  { vm_record with API.vM_generation_id = Xapi_vm_helpers.fresh_genid () } in
+
 			let vm_record =
 				if vm_exported_pre_dmc x
 				then begin
@@ -773,16 +777,25 @@ module VBD : HandlerTools = struct
 			(* If the VBD is supposed to be attached to a PV guest (which doesn't support
 				 currently_attached empty drives) then throw a fatal error. *)
 			let original_vm = API.Legacy.From.vM_t "" (find_in_export (Ref.string_of vbd_record.API.vBD_VM) state.export) in
-			if vbd_record.API.vBD_currently_attached && not(exists vbd_record.API.vBD_VDI state.table) then begin
-				(* It's only ok if it's a CDROM attached to an HVM guest *)
-				let has_booted_hvm =
-					let lbr =
-						try Helpers.parse_boot_record original_vm.API.vM_last_booted_record with _ -> original_vm
+			(* In the case of dry_run live migration, don't check for
+				 missing disks as CDs will be ejected before the real migration. *)
+			let dry_run, live = match config.import_type with
+			| Metadata_import {dry_run = dry_run; live = live} -> dry_run, live
+			| _ -> false, false
+			in
+			if not (dry_run && live) then 
+				begin
+					if vbd_record.API.vBD_currently_attached && not(exists vbd_record.API.vBD_VDI state.table) then begin
+					(* It's only ok if it's a CDROM attached to an HVM guest *)
+					let has_booted_hvm =
+						let lbr =
+							try Helpers.parse_boot_record original_vm.API.vM_last_booted_record with _ -> original_vm
+						in
+						lbr.API.vM_HVM_boot_policy <> ""
 					in
-					lbr.API.vM_HVM_boot_policy <> ""
-				in
-				if not(vbd_record.API.vBD_type = `CD && has_booted_hvm)
-				then raise (IFailure Attached_disks_not_found)
+					if not(vbd_record.API.vBD_type = `CD && has_booted_hvm)
+					then raise (IFailure Attached_disks_not_found)
+				end
 			end;
 
 			let vbd_record = { vbd_record with API.vBD_VM = vm } in
@@ -1089,7 +1102,7 @@ let assert_filename_is hdr =
 (** Takes an fd and a function, tries first to read the first tar block
     and checks for the existence of 'ova.xml'. If that fails then pipe
     the lot through gzip and try again *)
-let with_open_archive fd f =
+let with_open_archive fd ?length f =
 	(* Read the first header's worth into a buffer *)
 	let buffer = String.make Tar.Header.length ' ' in
 	let retry_with_gzip = ref true in
@@ -1116,7 +1129,9 @@ let with_open_archive fd f =
 				Unix.set_close_on_exec compressed_in;
 				debug "Writing initial buffer";
 				let (_: int) = Unix.write compressed_in buffer 0 Tar.Header.length in
-				let n = Unixext.copy_file fd compressed_in in
+				let limit = (Opt.map
+					(fun x -> Int64.sub x (Int64.of_int Tar.Header.length)) length) in
+				let n = Unixext.copy_file ?limit fd compressed_in in
 				debug "Written a total of %d + %Ld bytes" Tar.Header.length n;
 			) in
 		finally
@@ -1158,6 +1173,7 @@ let find_query_flag query key =
 (** Import metadata only *)
 let metadata_handler (req: Request.t) s _ =
 	debug "metadata_handler called";
+	req.Request.close <- true;
 	Xapi_http.with_context "VM.metadata_import" req s
 		(fun __context -> Helpers.call_api_functions ~__context (fun rpc session_id ->
 			let full_restore = find_query_flag req.Request.query "restore" in
@@ -1176,7 +1192,7 @@ let metadata_handler (req: Request.t) s _ =
 				[ Http.Hdr.task_id ^ ":" ^ (Ref.string_of (Context.get_task_id __context));
 				content_type ] in
 			Http_svr.headers s headers;
-			with_open_archive s
+			with_open_archive s ?length:req.Request.content_length
 				(fun metadata s ->
 					debug "Got XML";
 					(* Skip trailing two zero blocks *)
@@ -1295,13 +1311,13 @@ let handler (req: Request.t) s _ =
 									error "Encoding not yet implemented in the import code: %s" x;
 									Http_svr.headers s (http_403_forbidden ());
 									raise (IFailure Cannot_handle_chunked)
-								| None, _ ->
+								| None, content_length ->
 									let headers = Http.http_200_ok ~keep_alive:false () @
 										[ Http.Hdr.task_id ^ ":" ^ (Ref.string_of (Context.get_task_id __context));
 										content_type ] in
 									Http_svr.headers s headers;
 									debug "Reading XML";
-									with_open_archive s
+									with_open_archive s ?length:content_length
 										(fun metadata s ->
 											debug "Got XML";
 											let old_zurich_or_geneva = try ignore(Xva.of_xml metadata); true with _ -> false in

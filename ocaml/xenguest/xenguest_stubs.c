@@ -12,6 +12,9 @@
  * GNU Lesser General Public License for more details.
  */
 
+#define _GNU_SOURCE
+
+#include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <inttypes.h>
@@ -21,7 +24,7 @@
 
 #include <xenctrl.h>
 #include <xenguest.h>
-#include <xs.h>
+#include <xenstore.h>
 #include <xen/hvm/hvm_info_table.h>
 #include <xen/hvm/params.h>
 #include <xen/hvm/e820.h>
@@ -46,6 +49,8 @@
 #ifndef HVM_PARAM_VIRIDIAN
 #warning missing viridian parameter
 #endif
+
+#define XENGUEST_4_2
 
 #include <stdio.h>
 
@@ -124,8 +129,7 @@ out:
 static char *
 xenstore_getsv(int domid, const char *fmt, va_list ap)
 {
-    char *path = NULL, *s;
-    uint64_t value = 0;
+    char *path = NULL, *s = NULL;
     struct xs_handle *xsh = NULL;
     int n, m;
     char key[1024];
@@ -273,7 +277,7 @@ get_flags(struct flags *f, int domid)
     f->ramdisk_max_size = vm_pv_ramdisk_max_size ? vm_pv_ramdisk_max_size : host_pv_ramdisk_max_size;
 
     printf("Determined the following parameters from xenstore:");
-    printf("vcpu/number:%d vcpu/weight:%d vcpu/cap:%d nx: %d viridian: %d apic: %d acpi: %d pae: %d acpi_s4: %d acpi_s3: %d mmio_size_mib: %ld tsc_mode %d",
+    printf("vcpu/number:%d vcpu/weight:%d vcpu/cap:%d nx: %d viridian: %d apic: %d acpi: %d pae: %d acpi_s4: %d acpi_s3: %d mmio_size_mib: %lld tsc_mode %d",
            f->vcpus,f->vcpu_weight,f->vcpu_cap,f->nx,f->viridian,f->apic,f->acpi,f->pae,f->acpi_s4,f->acpi_s3,f->mmio_size_mib,f->tsc_mode);
     for (n = 0; n < f->vcpus; n++){
         printf("vcpu/%d/affinity:%s", n, (f->vcpu_affinity[n])?f->vcpu_affinity[n]:"unset");
@@ -334,6 +338,8 @@ CAMLprim value stub_xenguest_close(value xenguest_handle)
     CAMLreturn(Val_unit);
 }
 
+
+
 extern struct xc_dom_image *xc_dom_allocate(xc_interface *xch, const char *cmdline, const char *features);
 
 static void configure_vcpus(xc_interface *xch, int domid, struct flags f){
@@ -386,8 +392,9 @@ CAMLprim value stub_xc_linux_build_native(value xc_handle, value domid,
                                           value mem_max_mib, value mem_start_mib,
                                           value image_name, value ramdisk_name,
                                           value cmdline, value features,
-                                          value flags, value store_evtchn,
-                                          value console_evtchn)
+                                          value flags,
+                                          value store_evtchn, value store_domid,
+                                          value console_evtchn, value console_domid)
 {
     CAMLparam5(xc_handle, domid, mem_max_mib, mem_start_mib, image_name);
     CAMLxparam5(ramdisk_name, cmdline, features, flags, store_evtchn);
@@ -436,6 +443,13 @@ CAMLprim value stub_xc_linux_build_native(value xc_handle, value domid,
                            c_image_name, c_ramdisk_name, c_flags,
                            c_store_evtchn, &store_mfn,
                            c_console_evtchn, &console_mfn);
+    if (r == 0)
+        r = xc_dom_gnttab_seed(xch, c_domid,
+                               console_mfn,
+                               store_mfn,
+                               Int_val(console_domid),
+                               Int_val(store_domid));
+
     caml_leave_blocking_section();
 
 #ifndef XEN_UNSTABLE
@@ -463,7 +477,8 @@ CAMLprim value stub_xc_linux_build_bytecode(value * argv, int argn)
 {
     return stub_xc_linux_build_native(argv[0], argv[1], argv[2], argv[3],
                                       argv[4], argv[5], argv[6], argv[7],
-                                      argv[8], argv[9], argv[10]);
+                                      argv[8], argv[9], argv[10], argv[11],
+                                      argv[12]);
 }
 
 static int hvm_build_set_params(xc_interface *xch, int domid,
@@ -482,7 +497,6 @@ static int hvm_build_set_params(xc_interface *xch, int domid,
         return -1;
 
     va_hvm = (struct hvm_info_table *)(va_map + HVM_INFO_OFFSET);
-    va_hvm->acpi_enabled = f.acpi;
     va_hvm->apic_mode = f.apic;
     va_hvm->nr_vcpus = f.vcpus;
     memset(va_hvm->vcpu_online, 0, sizeof(va_hvm->vcpu_online));
@@ -515,14 +529,15 @@ static int hvm_build_set_params(xc_interface *xch, int domid,
 }
 
 CAMLprim value stub_xc_hvm_build_native(value xc_handle, value domid,
-                                        value mem_max_mib, value mem_start_mib, value image_name, value store_evtchn, value console_evtchn)
+                                        value mem_max_mib, value mem_start_mib, value image_name,
+                                        value store_evtchn, value store_domid,
+                                        value console_evtchn, value console_domid)
 {
     CAMLparam5(xc_handle, domid, mem_max_mib, mem_start_mib, image_name);
     CAMLxparam2(store_evtchn, console_evtchn);
     CAMLlocal1(result);
 
     char *image_name_c = strdup(String_val(image_name));
-    char *error[256];
     xc_interface *xch;
 
     unsigned long store_mfn=0;
@@ -568,6 +583,8 @@ CAMLprim value stub_xc_hvm_build_native(value xc_handle, value domid,
     if (r)
         failwith_oss_xc(xch, "hvm_build_params");
 
+    xc_dom_gnttab_hvm_seed(xch, _D(domid), console_mfn, store_mfn, Int_val(console_domid), Int_val(store_domid));
+
     result = caml_alloc_tuple(2);
     Store_field(result, 0, caml_copy_nativeint(store_mfn));
     Store_field(result, 1, caml_copy_nativeint(console_mfn));
@@ -578,7 +595,7 @@ CAMLprim value stub_xc_hvm_build_native(value xc_handle, value domid,
 CAMLprim value stub_xc_hvm_build_bytecode(value * argv, int argn)
 {
     return stub_xc_hvm_build_native(argv[0], argv[1], argv[2], argv[3],
-                                    argv[4], argv[5], argv[6]);
+                                    argv[4], argv[5], argv[6], argv[7], argv[8]);
 }
 
 
@@ -605,11 +622,11 @@ int switch_qemu_logdirty(int domid, unsigned enable, void *data)
 
 }
 
-static struct save_callbacks save_callbacks = {
-    .suspend = dispatch_suspend,
-    .switch_qemu_logdirty = switch_qemu_logdirty,
-    .checkpoint = NULL,
-};
+/* static struct save_callbacks save_callbacks = { */
+/*     .suspend = dispatch_suspend, */
+/*     .switch_qemu_logdirty = switch_qemu_logdirty, */
+/*     .checkpoint = NULL, */
+/* }; */
 
 #define GENERATION_ID_ADDRESS "hvmloader/generation-id-address"
 
@@ -745,15 +762,17 @@ CAMLprim value stub_xc_domain_restore(value handle, value fd, value domid,
                                       value hvm, value no_incr_generationid)
 {
     CAMLparam5(handle, fd, domid, store_evtchn, console_evtchn);
-    CAMLxparam1(hvm);
+    CAMLxparam2(hvm, no_incr_generationid);
     CAMLlocal1(result);
     unsigned long store_mfn, console_mfn;
     domid_t c_store_domid, c_console_domid;
+
+#ifdef XENGUEST_4_2
     unsigned long c_vm_generationid_addr;
-    char c_vm_generationid_addr_s[32];
+#endif
+
     unsigned int c_store_evtchn, c_console_evtchn;
     int r;
-    size_t size, written;
 
 #ifdef XC_HAS_4_1_NEW_GENERATION_ID_INTERFACE
     genid_cb_data_t genid_cb_data = { _D(domid) };

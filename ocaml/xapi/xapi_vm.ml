@@ -57,10 +57,6 @@ let assert_can_boot_here ~__context ~self ~host =
 		Helpers.assert_platform_version_is_same_on_master ~__context ~host ~self;
 	assert_can_boot_here ~__context ~self ~host ~snapshot ()
 
-let retrieve_wlb_recommendations ~__context ~vm =
-	let snapshot = Db.VM.get_record ~__context ~self:vm in
-	retrieve_wlb_recommendations ~__context ~vm ~snapshot
-
 let assert_agile ~__context ~self = Helpers.vm_assert_agile ~__context ~self
 
 (* helpers *)
@@ -179,10 +175,7 @@ let pause ~__context ~vm =
 	Xapi_xenops.pause ~__context ~self:vm
 
 let unpause ~__context ~vm =
-	License_check.with_vm_license_check ~__context vm
-		(fun () ->
-			Xapi_xenops.unpause ~__context ~self:vm
-		)
+	Xapi_xenops.unpause ~__context ~self:vm
 
 let set_xenstore_data ~__context ~self ~value =
 	Xapi_xenops.set_xenstore_data ~__context ~self value
@@ -193,18 +186,15 @@ let set_xenstore_data ~__context ~self ~value =
 *)
 
 let start ~__context ~vm ~start_paused ~force =
-	License_check.with_vm_license_check ~__context vm
-		(fun () ->
-			let vmr = Db.VM.get_record ~__context ~self:vm in
-			Vgpuops.create_vgpus ~__context (vm, vmr) (Helpers.will_boot_hvm ~__context ~self:vm);
+	let vmr = Db.VM.get_record ~__context ~self:vm in
+	Vgpuops.create_vgpus ~__context (vm, vmr) (Helpers.will_boot_hvm ~__context ~self:vm);
 
-			if vmr.API.vM_ha_restart_priority = Constants.ha_restart
-			then begin
-				Xapi_ha_vm_failover.assert_new_vm_preserves_ha_plan ~__context vm;
-				Db.VM.set_ha_always_run ~__context ~self:vm ~value:true
-			end;
-			Xapi_xenops.start ~__context ~self:vm start_paused
-		)
+	if vmr.API.vM_ha_restart_priority = Constants.ha_restart
+	then begin
+		Xapi_ha_vm_failover.assert_new_vm_preserves_ha_plan ~__context vm;
+		Db.VM.set_ha_always_run ~__context ~self:vm ~value:true
+	end;
+	Xapi_xenops.start ~__context ~self:vm start_paused
 
 (** For VM.start_on and VM.resume_on the message forwarding layer should only forward here
     if 'host' = localhost *)
@@ -223,10 +213,7 @@ let start_on  ~__context ~vm ~host ~start_paused ~force =
 	start ~__context ~vm ~start_paused ~force
 
 let hard_reboot ~__context ~vm =
-	License_check.with_vm_license_check ~__context vm
-		(fun () ->
-			Xapi_xenops.reboot ~__context ~self:vm None
-		)
+	Xapi_xenops.reboot ~__context ~self:vm None
 
 let hard_shutdown ~__context ~vm =
 	Db.VM.set_ha_always_run ~__context ~self:vm ~value:false;
@@ -245,10 +232,7 @@ let hard_shutdown ~__context ~vm =
 	Xapi_xenops.shutdown ~__context ~self:vm None
 
 let clean_reboot ~__context ~vm =
-	License_check.with_vm_license_check ~__context vm
-		(fun () ->
-			Xapi_xenops.reboot ~__context ~self:vm (Some 1200.0)
-		)
+	Xapi_xenops.reboot ~__context ~self:vm (Some 1200.0)
 
 let clean_shutdown ~__context ~vm =
 	Db.VM.set_ha_always_run ~__context ~self:vm ~value:false;
@@ -315,19 +299,16 @@ let suspend ~__context ~vm =
 	Xapi_xenops.suspend ~__context ~self:vm
 
 let resume ~__context ~vm ~start_paused ~force = 
-	License_check.with_vm_license_check ~__context vm
-		(fun () ->
-			if Db.VM.get_ha_restart_priority ~__context ~self:vm = Constants.ha_restart
-			then begin
-				Xapi_ha_vm_failover.assert_new_vm_preserves_ha_plan ~__context vm;
-				Db.VM.set_ha_always_run ~__context ~self:vm ~value:true
-			end;
+	if Db.VM.get_ha_restart_priority ~__context ~self:vm = Constants.ha_restart
+	then begin
+		Xapi_ha_vm_failover.assert_new_vm_preserves_ha_plan ~__context vm;
+		Db.VM.set_ha_always_run ~__context ~self:vm ~value:true
+	end;
 
-			let host = Helpers.get_localhost ~__context in
-			if not force then Cpuid_helpers.assert_vm_is_compatible ~__context ~vm ~host ();
+	let host = Helpers.get_localhost ~__context in
+	if not force then Cpuid_helpers.assert_vm_is_compatible ~__context ~vm ~host ();
 
-			Xapi_xenops.resume ~__context ~self:vm ~start_paused ~force
-		)
+	Xapi_xenops.resume ~__context ~self:vm ~start_paused ~force
 
 let resume_on  ~__context ~vm ~host ~start_paused ~force =
 	(* If we modify this to support resume_on other-than-localhost,
@@ -380,6 +361,7 @@ let create ~__context
 		~order
 		~suspend_SR
 		~version
+		~generation_id
 		: API.ref_VM =
 	let gen_mac_seed () = Uuid.to_string (Uuid.make_uuid ()) in
 	(* Add random mac_seed if there isn't one specified already *)
@@ -430,6 +412,7 @@ let create ~__context
 		~order
 		~suspend_SR
 		~version
+		~generation_id
 
 let destroy  ~__context ~self =
 	let parent = Db.VM.get_parent ~__context ~self in
@@ -480,6 +463,7 @@ let revert ~__context ~snapshot =
 		if Db.is_valid_ref __context vm
 		then vm
 		else Xapi_vm_snapshot.create_vm_from_snapshot ~__context ~snapshot in
+	ignore (Xapi_vm_helpers.vm_fresh_genid ~__context ~self:vm);
 	Xapi_vm_snapshot.revert ~__context ~snapshot ~vm
 
 (* As the checkpoint operation modify the domain state, we take the vm_lock to do not let the event *)

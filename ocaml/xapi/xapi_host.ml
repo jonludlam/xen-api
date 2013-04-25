@@ -20,7 +20,6 @@ open Xapi_host_helpers
 open Xapi_support
 open Db_filter_types
 open Create_misc
-open Workload_balancing
 open Network
 
 module D = Debug.Debugger(struct let name="xapi" end)
@@ -301,102 +300,8 @@ let get_vms_which_prevent_evacuation ~__context ~self =
   let plans = compute_evacuation_plan_no_wlb ~__context ~host:self in
   Hashtbl.fold (fun vm plan acc -> match plan with Error(code, params) -> (vm, (code :: params)) :: acc | _ -> acc) plans []
 
-let compute_evacuation_plan_wlb ~__context ~self =
-  (* We treat xapi as primary when it comes to "hard" errors, i.e. those that aren't down to memory constraints.  These are things like
-	 VM_REQUIRES_SR or VM_MISSING_PV_DRIVERS.
-
-	 We treat WLB as primary when it comes to placement of things that can actually move.  WLB will return a list of migrations to perform,
-	 and we pass those on.  WLB will only return a partial set of migrations -- if there's not enough memory available, or if the VM can't
-	 move, then it will simply omit that from the results.
-
-	 So the algorithm is:
-	   Record all the recommendations made by WLB.
-	   Record all the non-memory errors from compute_evacuation_plan_no_wlb.  These might overwrite recommendations by WLB, which is the
-	   right thing to do because WLB doesn't know about all the HA corner cases (for example), but xapi does.
-	   If there are any VMs left over, record them as HOST_NOT_ENOUGH_FREE_MEMORY, because we assume that WLB thinks they don't fit.
-  *)
-
-  let error_vms = compute_evacuation_plan_no_wlb ~__context ~host:self in
-  let vm_recoms = get_evacuation_recoms ~__context ~uuid:(Db.Host.get_uuid ~__context ~self) in
-  let recs = Hashtbl.create 31 in
-
-  List.iter (fun (v, detail) ->
-	debug "WLB recommends VM evacuation: %s to %s" (Db.VM.get_name_label ~__context ~self:v) (String.concat "," detail);
-
-	(* Sanity check
-	Note: if the vm being moved is dom0 then this is a power management rec and this check does not apply
-	*)
-	let resident_h = (Db.VM.get_resident_on ~__context ~self:v) in
-	let target_uuid = List.hd (List.tl detail) in
-	if get_dom0_vm ~__context target_uuid != v &&  Db.Host.get_uuid ~__context ~self:resident_h = target_uuid
-	then
-	  (* resident host and migration host are the same. Reject this plan *)
-	  raise (Api_errors.Server_error
-		   (Api_errors.wlb_malformed_response,
-		[Printf.sprintf "WLB recommends migrating VM %s to the same server it is being evacuated from."
-		   (Db.VM.get_name_label ~__context ~self:v)]));
-
-	match detail with
-	  | ["WLB"; host_uuid; _] ->
-		  Hashtbl.replace recs v (Migrate (Db.Host.get_by_uuid ~__context ~uuid:host_uuid))
-	  | _ ->
-		  raise (Api_errors.Server_error
-			   (Api_errors.wlb_malformed_response, ["WLB gave malformed details for VM evacuation."]))) vm_recoms;
-
-  Hashtbl.iter (fun v detail ->
-	match detail with
-	  | (Migrate _) ->
-		  (* Skip migrations -- WLB is providing these *)
-		  ()
-	  | (Error (e, _)) when e = Api_errors.host_not_enough_free_memory ->
-		  (* Skip errors down to free memory -- we're letting WLB decide this *)
-		  ()
-	  | (Error _) as p ->
-		  debug "VM preventing evacuation: %s because %s" (Db.VM.get_name_label ~__context ~self:v) (string_of_per_vm_plan p);
-		  Hashtbl.replace recs v detail) error_vms;
-
-  let resident_vms =
-	List.filter (fun v -> (not (Db.VM.get_is_control_domain ~__context ~self:v)) && (not (Db.VM.get_is_a_template ~__context ~self:v)))
-	(Db.Host.get_resident_VMs ~__context ~self) in
-  List.iter (fun vm ->
-	if not (Hashtbl.mem recs vm) then
-	  (* Anything for which we don't have a recommendation from WLB, but which is agile, we treat as "not enough memory" *)
-	  Hashtbl.replace recs vm (Error (Api_errors.host_not_enough_free_memory, [Ref.string_of vm]))) resident_vms;
-
-  Hashtbl.iter (fun vm detail ->
-	debug "compute_evacuation_plan_wlb: Key: %s Value %s" (Db.VM.get_name_label ~__context ~self:vm) (string_of_per_vm_plan detail)) recs;
-  recs
-
 let compute_evacuation_plan ~__context ~host =
-  let oc = Db.Pool.get_other_config ~__context ~self:(Helpers.get_pool ~__context) in
-  if ((List.exists (fun (k,v) -> k = "wlb_choose_host_disable" && (String.lowercase v = "true")) oc)
-	|| not (Workload_balancing.check_wlb_enabled ~__context))
-  then
-	begin
-	  debug "Using wlb recommendations for choosing a host has been disabled or wlb is not available. Using original algorithm";
 	  compute_evacuation_plan_no_wlb ~__context ~host
-	end
-  else
-	try
-	  debug "Using WLB recommendations for host evacuation.";
-	  compute_evacuation_plan_wlb ~__context ~self:host
-	with
-	| Api_errors.Server_error(error_type, error_detail) ->
-		debug "Encountered error when using wlb for choosing host \"%s: %s\". Using original algorithm" error_type (String.concat "" error_detail);
-		(try
-		  let uuid = Db.Host.get_uuid ~__context ~self:host in
-		  let message_body =
-			Printf.sprintf "Wlb consultation for Host '%s' failed (pool uuid: %s)"
-			(Db.Host.get_name_label ~__context ~self:host)
-			(Db.Pool.get_uuid ~__context ~self:(Helpers.get_pool ~__context))
-		  in
-		  let (name, priority) = Api_messages.wlb_failed in
-		  ignore(Xapi_message.create ~__context ~name ~priority ~cls:`Host ~obj_uuid:uuid ~body:message_body)
-		with _ -> ());
-	  compute_evacuation_plan_no_wlb ~__context ~host
-	| _ ->
-		debug "Encountered an unknown error when using wlb for choosing host. Using original algorithm";
-		compute_evacuation_plan_no_wlb ~__context ~host
 
 let evacuate ~__context ~host =
 	let task = Context.get_task_id __context in
@@ -413,9 +318,14 @@ let evacuate ~__context ~host =
 		let individual_progress = 1.0 /. float (Hashtbl.length plans) in
 		let migrate_vm  vm plan = match plan with
 			| Migrate host ->
-				Helpers.call_api_functions ~__context
+				(try
+					Helpers.call_api_functions ~__context
 					(fun rpc session_id -> Client.Client.VM.pool_migrate
-						~rpc ~session_id ~vm ~host ~options:[ "live", "true" ]);
+						~rpc ~session_id ~vm ~host ~options:[ "live", "true" ])
+				with
+				|Api_errors.Server_error(code, params) when code = Api_errors.vm_bad_power_state -> ()
+				| e -> raise e
+				);
 				let progress = Db.Task.get_progress ~__context ~self:task in
 				TaskHelper.set_progress ~__context (progress +. individual_progress)
 			| Error(code, params) -> (* should never happen *)
@@ -433,18 +343,6 @@ let evacuate ~__context ~host =
 		in
 		assert (List.length vms = 0)
 	end
-
-let retrieve_wlb_evacuate_recommendations ~__context ~self =
-  let plans = compute_evacuation_plan_wlb ~__context ~self in
-  Hashtbl.fold
-	(fun vm detail acc ->
-	   let plan = match detail with
-		 | Error (e, t) ->
-			 e :: t
-		 | Migrate h ->
-			 ["WLB"; (Db.Host.get_uuid ~__context ~self:h)]
-	   in
-	   (vm, plan) :: acc) plans []
 
 let restart_agent ~__context ~host =
   debug "Host.restart_agent: Host agent will restart in 10s!!!!";
@@ -1259,11 +1157,8 @@ let apply_edition ~__context ~host ~edition =
 	if Db.Pool.get_ha_enabled ~__context ~self:pool then
 		raise (Api_errors.Server_error (Api_errors.ha_is_enabled, []))
 	else begin
-		let cpu_info = Db.Host.get_cpu_info ~__context ~self:host in
-		let socket_count = List.assoc "socket_count" cpu_info in
 		let edition', features, additional =
-			V6client.apply_edition ~__context edition
-				["sockets", socket_count]
+			V6client.apply_edition ~__context edition []
 		in
 		Db.Host.set_edition ~__context ~self:host ~value:edition';
 		copy_license_to_db ~__context ~host ~features ~additional

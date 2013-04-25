@@ -993,9 +993,9 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 		(* -------------------------------------------------------------------------- *)
 
 		(* don't forward create. this just makes a db record *)
-		let create ~__context ~name_label ~name_description ~user_version ~is_a_template ~affinity ~memory_target ~memory_static_max ~memory_dynamic_max ~memory_dynamic_min ~memory_static_min ~vCPUs_params ~vCPUs_max ~vCPUs_at_startup ~actions_after_shutdown ~actions_after_reboot ~actions_after_crash ~pV_bootloader ~pV_kernel ~pV_ramdisk ~pV_args ~pV_bootloader_args ~pV_legacy_args ~hVM_boot_policy ~hVM_boot_params ~hVM_shadow_multiplier ~platform ~pCI_bus ~other_config ~recommendations ~xenstore_data  ~ha_always_run ~ha_restart_priority ~tags ~blocked_operations ~protection_policy ~is_snapshot_from_vmpp ~appliance ~start_delay ~shutdown_delay ~order ~suspend_SR ~version =
+		let create ~__context ~name_label ~name_description ~user_version ~is_a_template ~affinity ~memory_target ~memory_static_max ~memory_dynamic_max ~memory_dynamic_min ~memory_static_min ~vCPUs_params ~vCPUs_max ~vCPUs_at_startup ~actions_after_shutdown ~actions_after_reboot ~actions_after_crash ~pV_bootloader ~pV_kernel ~pV_ramdisk ~pV_args ~pV_bootloader_args ~pV_legacy_args ~hVM_boot_policy ~hVM_boot_params ~hVM_shadow_multiplier ~platform ~pCI_bus ~other_config ~recommendations ~xenstore_data  ~ha_always_run ~ha_restart_priority ~tags ~blocked_operations ~protection_policy ~is_snapshot_from_vmpp ~appliance ~start_delay ~shutdown_delay ~order ~suspend_SR ~version ~generation_id =
 			info "VM.create: name_label = '%s' name_description = '%s'" name_label name_description;
-			Local.VM.create ~__context ~name_label ~name_description ~user_version ~is_a_template ~affinity ~memory_target ~memory_static_max ~memory_dynamic_max ~memory_dynamic_min ~memory_static_min ~vCPUs_params ~vCPUs_max ~vCPUs_at_startup ~actions_after_shutdown ~actions_after_reboot ~actions_after_crash ~pV_bootloader ~pV_kernel ~pV_ramdisk ~pV_args ~pV_bootloader_args ~pV_legacy_args ~hVM_boot_policy ~hVM_boot_params ~hVM_shadow_multiplier ~platform ~pCI_bus ~other_config  ~recommendations ~xenstore_data  ~ha_always_run ~ha_restart_priority ~tags ~blocked_operations ~protection_policy ~is_snapshot_from_vmpp ~appliance ~start_delay ~shutdown_delay ~order ~suspend_SR ~version
+			Local.VM.create ~__context ~name_label ~name_description ~user_version ~is_a_template ~affinity ~memory_target ~memory_static_max ~memory_dynamic_max ~memory_dynamic_min ~memory_static_min ~vCPUs_params ~vCPUs_max ~vCPUs_at_startup ~actions_after_shutdown ~actions_after_reboot ~actions_after_crash ~pV_bootloader ~pV_kernel ~pV_ramdisk ~pV_args ~pV_bootloader_args ~pV_legacy_args ~hVM_boot_policy ~hVM_boot_params ~hVM_shadow_multiplier ~platform ~pCI_bus ~other_config  ~recommendations ~xenstore_data  ~ha_always_run ~ha_restart_priority ~tags ~blocked_operations ~protection_policy ~is_snapshot_from_vmpp ~appliance ~start_delay ~shutdown_delay ~order ~suspend_SR ~version ~generation_id
 
 		(* don't forward destroy. this just deletes db record *)
 		let destroy ~__context ~self =
@@ -1217,6 +1217,12 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 			if Helpers.rolling_upgrade_in_progress ~__context
 			then Helpers.assert_host_has_highest_version_in_pool
 				~__context ~host ;
+			(* Prevent VM start on a host that is evacuating *)
+			List.iter (fun op ->
+				match op with
+				| ( _ , `evacuate ) -> raise (Api_errors.Server_error(Api_errors.host_evacuate_in_progress, [(Ref.string_of host)]));
+				| _ -> ())
+			(Db.Host.get_current_operations ~__context ~self:host);
 			info "VM.start_on: VM = '%s'; host '%s'"
 				(vm_uuid ~__context vm) (host_uuid ~__context host);
 			let local_fn = Local.VM.start_on ~vm ~host ~start_paused ~force in
@@ -1846,10 +1852,6 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 			info "VM.assert_can_boot_here: VM = '%s'; host = '%s'" (vm_uuid ~__context self) (host_uuid ~__context host);
 			Local.VM.assert_can_boot_here ~__context ~self ~host
 
-		let retrieve_wlb_recommendations ~__context ~vm  =
-			info "VM.retrieve_wlb_recommendations: VM = '%s'" (vm_uuid ~__context vm);
-			Local.VM.retrieve_wlb_recommendations ~__context ~vm
-
 		let assert_agile ~__context ~self =
 			info "VM.assert_agile: VM = '%s'" (vm_uuid ~__context self);
 			Local.VM.assert_agile ~__context ~self
@@ -2171,10 +2173,13 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 			let local_fn = Local.Host.get_log ~host in
 			do_op_on ~local_fn ~__context ~host (fun session_id rpc -> Client.Host.get_log rpc session_id host)
 
+		(* The message is already marked as Removed, it should be safe to remove the dispatching logic here 
+ 
 		let license_apply ~__context ~host ~contents =
 			info "Host.license_apply: host = '%s'" (host_uuid ~__context host);
 			let local_fn = Local.Host.license_apply ~host ~contents in
 			do_op_on ~local_fn ~__context ~host (fun session_id rpc -> Client.Host.license_apply rpc session_id host contents)
+		*)
 
 		let assert_can_evacuate ~__context ~host =
 			info "Host.assert_can_evacuate: host = '%s'" (host_uuid ~__context host);
@@ -2192,10 +2197,6 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 				(fun () ->
 					Local.Host.evacuate ~__context ~host
 				)
-
-		let retrieve_wlb_evacuate_recommendations ~__context ~self =
-			info "Host.retrieve_wlb_evacuate_recommendations: host = '%s'" (host_uuid ~__context self);
-			Local.Host.retrieve_wlb_evacuate_recommendations ~__context ~self
 
 		let update_pool_secret ~__context ~host ~pool_secret =
 			info "Host.update_pool_secret: host = '%s'" (host_uuid ~__context host);
