@@ -41,7 +41,7 @@ let connect path domid (args: string list) (fds: (string * Unix.file_descr) list
 	(* Need to send commands and receive responses from the
 	   slave process *)
 
-	let using_xiu = Xenctrl.is_fake () in
+	let using_xiu = false in 
 
 	let last_log_file = Printf.sprintf "/tmp/xenguest.%d.log" domid in
 	(try Unix.unlink last_log_file with _ -> ());

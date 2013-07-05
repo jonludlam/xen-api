@@ -147,7 +147,7 @@ module Meminfo = struct
 				let meminfo_free = Int64.of_string (xs.Xs.read path) in
 				debug "memfree has changed to %Ld in domain %d" meminfo_free d;
 				current_meminfofree_values := IntMap.add d meminfo_free !current_meminfofree_values
-			with Xenbus.Xb.Noent ->
+			with Xs_protocol.Enoent _ ->
 				debug "Couldn't read path %s; forgetting last known memfree value for domain %d" path d;
 				current_meminfofree_values := IntMap.remove d !current_meminfofree_values
 

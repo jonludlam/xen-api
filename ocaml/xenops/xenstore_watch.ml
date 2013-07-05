@@ -20,6 +20,8 @@ open Threadext
 module D = Debug.Debugger(struct let name = "xenstore_watch" end)
 open D
 
+exception Watch_overflow
+
 let _introduceDomain = "@introduceDomain"
 let _releaseDomain = "@releaseDomain"
 
@@ -28,7 +30,7 @@ module IntSet = Set.Make(struct type t = int let compare = compare end)
 
 module type WATCH_ACTIONS = sig
 	val interesting_paths_for_domain : int -> string -> string list
-	val watch_fired : Xenctrl.handle -> Xenstore.Xs.xsh -> string -> Xenctrl.Domain_info.t IntMap.t -> IntSet.t -> unit
+	val watch_fired : Xenctrl.handle -> Xenstore.Xs.xsh -> string -> Xenctrl.domaininfo IntMap.t -> IntSet.t -> unit
 	val unmanaged_domain : int -> string -> bool
 	val found_running_domain : int -> string -> unit
 	val domain_appeared : Xenctrl.handle -> Xenstore.Xs.xsh -> int -> unit
@@ -43,14 +45,14 @@ let unwatch ~xs path =
 	try
 		debug "xenstore unwatch %s" path;
 		xs.Xs.unwatch path path
-	with Xenbus.Xb.Noent ->
-		debug "xenstore unwatch %s threw Xb.Noent" path
+	with Xs_protocol.Enoent _ ->
+		debug "xenstore unwatch %s threw Xs_protocol.Enoent" path
 
 module WatchXenstore = functor(Actions: WATCH_ACTIONS) -> struct
 
 	let list_domains xc =
 		let dis = Xenctrl.domain_getinfolist xc 0 in
-		let ids = List.map (fun x -> x.Xenctrl.Domain_info.domid) dis in
+		let ids = List.map (fun x -> x.Xenctrl.domid) dis in
 		List.fold_left (fun map (k, v) -> IntMap.add k v map) IntMap.empty (List.combine ids dis)
 
 	let domain_looks_different a b = match a, b with
@@ -58,7 +60,7 @@ module WatchXenstore = functor(Actions: WATCH_ACTIONS) -> struct
 		| Some _, None -> true
 		| None, None -> false
 		| Some a', Some b' ->
-			let open Xenctrl.Domain_info in
+			let open Xenctrl in
 			a'.shutdown <> b'.shutdown
 			|| (a'.shutdown && b'.shutdown && (a'.shutdown_code <> b'.shutdown_code))
 
@@ -95,7 +97,7 @@ module WatchXenstore = functor(Actions: WATCH_ACTIONS) -> struct
 					let different = list_different_domains !domains domains' in
 					List.iter
 						(fun domid ->
-							let open Xenctrl.Domain_info in
+							let open Xenctrl in
 							debug "Domain %d may have changed state" domid;
 							(* The uuid is either in the new domains map or the old map. *)
 							let di = IntMap.find domid (if IntMap.mem domid domains' then domains' else !domains) in
@@ -122,20 +124,29 @@ module WatchXenstore = functor(Actions: WATCH_ACTIONS) -> struct
 						) different;
 					domains := domains' in
 
-				xs.Xs.watch _introduceDomain "";
-				xs.Xs.watch _releaseDomain "";
-				look_for_different_domains ();
+				let process_one_watch xc c (path, token) =
+				  if path = _introduceDomain || path = _releaseDomain
+				  then look_for_different_domains ()
+				  else 
+				    Client.with_xs c (fun h -> 
+				      let xs = Xs.ops h in
+				      Actions.watch_fired xc xs path !domains !watches) in
 
-				let open Xenctrl.Domain_info in
+				let register_for_watches xc =
+				  let c = client () in
+				  Client.with_xs c
+				    (fun xs ->
+                                      Client.set_watch_callback c (process_one_watch xc c);
+                                      Client.watch xs _introduceDomain "";
+                                      Client.watch xs _releaseDomain "") in
 
 				while true do
-					let path, _ =
-						if Xs.has_watchevents xs
-						then Xs.get_watchevent xs
-						else Xs.read_watchevent xs in
-					if path = _introduceDomain || path = _releaseDomain
-					then look_for_different_domains ()
-					else Actions.watch_fired xc xs path !domains !watches
+				  try
+                                    debug "(re)starting xenstore watch thread";
+                                    Xenctrl.with_intf register_for_watches;
+				    Thread.delay 5.
+				  with _ -> 
+                                    Thread.delay 5.
 				done
 			)
 

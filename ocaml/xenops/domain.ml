@@ -308,7 +308,7 @@ let shutdown_wait_for_ack (t: Xenops_task.t) ?(timeout=60.) ~xc ~xs domid req =
 	let di = Xenctrl.domain_getinfo xc domid in
 	let uuid = get_uuid ~xc domid in
 	if ((di.Xenctrl.hvm_guest)
-	&& not (Xenctrl.hvm_check_pvdriver xc domid)) then begin
+	&& false) (* not (Xenctrl.hvm_check_pvdriver xc domid)) *) then begin
 		debug "VM = %s; domid = %d; HVM guest without PV drivers: not expecting any acknowledgement" (Uuid.to_string uuid) domid;
 		Xenctrl.domain_shutdown xc domid (shutdown_to_xc_shutdown req)
 	end else begin
@@ -1145,11 +1145,9 @@ let cpuid_set ~xc ~hvm domid cfg =
 	cfgout
 
 let cpuid_apply ~xc ~hvm domid =
-	if not (Xenctrl.is_fake()) then begin
-		let uuid = get_uuid ~xc domid in
-		debug "VM = %s; domid = %d; cpuid_apply" (Uuid.to_string uuid) domid;
-		Xenctrl.domain_cpuid_apply_policy xc domid
-	end
+	let uuid = get_uuid ~xc domid in
+	debug "VM = %s; domid = %d; cpuid_apply" (Uuid.to_string uuid) domid;
+	Xenctrl.domain_cpuid_apply_policy xc domid
 
 let cpuid_check ~xc cfg =
 	let tmp = Array.create 4 None in
