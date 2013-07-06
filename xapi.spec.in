@@ -10,10 +10,9 @@ URL:  http://www.xen.org
 Source0: xapi-%{version}.tar.bz2
 Source1: jquery-1.1.3.1.pack.js
 Source2: jquery.treeview.zip
-Source3: opam-repo-dev.tar.bz2
 Patch0: xapi-version.patch
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
-BuildRequires: pam-devel tetex-latex ocaml ocaml-opam opam-repository opam-system xen-devel zlib-devel
+BuildRequires: pam-devel tetex-latex ocaml omake ocaml-findlib ocaml-xmlm ocaml-type-conv ocaml-xmlm-devel xen-devel zlib-devel
 
 %description
 XCP toolstack.
@@ -85,13 +84,6 @@ Group: System/Hypervisor
 %description xenops
 This package contains the xenops-based low-level debugging tools.
 
-%package opam-system-libs-devel
-Summary: opam libraries for xapi
-Group:   Development/Libraries
-
-%description opam-system-libs-devel
-This package contains some extra ocaml libraries
-
 %package client-devel
 Summary: xapi Development Headers and Libraries
 Group:   Development/Libraries
@@ -123,32 +115,16 @@ Group:   Development/Libraries
 %description xenstore-watch-devel
 This package contains a library of functions for watching xenstore.
 
-%package fe
-Summary: The fork and exec daemon
-Group: System/Hypervisor
-
-%description fe
-This package contains the fork and exec daemon.
-
 %prep 
 %setup -q
-%setup -a 3 -T -D -c opam-repo-dev
 %patch0 -p0 -b xapi-version.patch
 
 %build
-export OPAMROOT=/usr/local/opam
-eval `opam config -env`
-opam remote add dev opam-repo-dev || true
-opam update
-opam install -y cdrom fd-send-recv forkexecd libvhd nbd netdev oclock ounit rpc ssl stdext syslog tapctl xen-api-libs-transitional xenctrl xenstore squeezed
-
 COMPILE_JAVA=no %{__make}
+COMPILE_JAVA=no %{__make} test
 
 %install
 rm -rf %{buildroot}
-
-export OPAMROOT=/usr/local/opam
-eval `opam config -env`
 
 DESTDIR=$RPM_BUILD_ROOT %{__make} install
 
@@ -164,21 +140,6 @@ for e in py pyc pyo; do
 done > rrdd-files
 
 ln -s /var/lib/xcp $RPM_BUILD_ROOT/var/xapi
-
-mkdir -p $RPM_BUILD_ROOT/usr/local/opam/xsbuild
-for i in cdrom cpuid cstruct fd-send-recv forkexec gzip http-svr libxcpvhd log nbd netdev oclock ocplib-endian optcomp pciutil sexpr sha1 stdext stublibs stunnel syslog tapctl uuid uuidm xen-utils xenctrl xenctrlext xenstore-compat xenstore xenstore_transport xml-light2
-do
-    rsync -av /usr/local/opam/xsbuild/lib/$i $RPM_BUILD_ROOT/usr/local/opam/xsbuild/lib/
-done
-
-cd $RPM_BUILD_ROOT/usr/local/opam/xsbuild/lib/stublibs
-rm dllbitstring.so* dlljs_of_ocaml.so* dlllwt-unix_stubs.so* dllssl_stubs.so* dllssl_threads_stubs.so*
-
-mkdir -p $RPM_BUILD_ROOT/etc/rc.d/init.d
-cp /usr/local/opam/xsbuild/etc/init.d/fe $RPM_BUILD_ROOT/etc/rc.d/init.d/fe
-mkdir -p $RPM_BUILD_ROOT/opt/xensource/libexec
-cp /usr/local/opam/xsbuild/bin/xcp-fe $RPM_BUILD_ROOT/opt/xensource/libexec/fe
-cp /usr/local/opam/xsbuild/bin/squeezed $RPM_BUILD_ROOT/opt/xensource/libexec/squeezed
 
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -204,9 +165,6 @@ rm -rf $RPM_BUILD_ROOT
 
 %post v6d
 [ ! -x /sbin/chkconfig ] || chkconfig --add v6d
-
-%post fe
-[ ! -x /sbin/chkconfig ] || chkconfig --add fe
 
 %files core -f core-files
 %defattr(-,root,root,-)
@@ -424,80 +382,28 @@ rm -rf $RPM_BUILD_ROOT
 @OPTDIR@/debug/quicktestbin
 /cli-rt/*
 
-%files opam-system-libs-devel
-%defattr(-,root,root,-)
-/usr/local/opam/xsbuild/lib/cdrom/
-/usr/local/opam/xsbuild/lib/cpuid/
-/usr/local/opam/xsbuild/lib/cstruct/
-/usr/local/opam/xsbuild/lib/fd-send-recv/
-/usr/local/opam/xsbuild/lib/forkexec/
-/usr/local/opam/xsbuild/lib/gzip/
-/usr/local/opam/xsbuild/lib/http-svr/
-/usr/local/opam/xsbuild/lib/libxcpvhd/
-/usr/local/opam/xsbuild/lib/log/
-/usr/local/opam/xsbuild/lib/nbd/
-/usr/local/opam/xsbuild/lib/netdev/
-/usr/local/opam/xsbuild/lib/oclock/
-/usr/local/opam/xsbuild/lib/ocplib-endian/
-/usr/local/opam/xsbuild/lib/optcomp/
-/usr/local/opam/xsbuild/lib/pciutil/
-/usr/local/opam/xsbuild/lib/sexpr/
-/usr/local/opam/xsbuild/lib/sha1/
-/usr/local/opam/xsbuild/lib/stdext/
-/usr/local/opam/xsbuild/lib/stublibs/dllcdrom_stubs.so
-/usr/local/opam/xsbuild/lib/stublibs/dllcdrom_stubs.so.owner
-/usr/local/opam/xsbuild/lib/stublibs/dllcpuid_stubs.so
-/usr/local/opam/xsbuild/lib/stublibs/dllcpuid_stubs.so.owner
-/usr/local/opam/xsbuild/lib/stublibs/dllcstruct_stubs.so
-/usr/local/opam/xsbuild/lib/stublibs/dllcstruct_stubs.so.owner
-/usr/local/opam/xsbuild/lib/stublibs/dllfd_send_recv_stubs.so
-/usr/local/opam/xsbuild/lib/stublibs/dllfd_send_recv_stubs.so.owner
-/usr/local/opam/xsbuild/lib/stublibs/dlllibxcpvhd_stubs.so
-/usr/local/opam/xsbuild/lib/stublibs/dlllibxcpvhd_stubs.so.owner
-/usr/local/opam/xsbuild/lib/stublibs/dlllog_stubs.so
-/usr/local/opam/xsbuild/lib/stublibs/dlllog_stubs.so.owner
-/usr/local/opam/xsbuild/lib/stublibs/dllnetdev_stubs.so
-/usr/local/opam/xsbuild/lib/stublibs/dllnetdev_stubs.so.owner
-/usr/local/opam/xsbuild/lib/stublibs/dlloclock_stubs.so
-/usr/local/opam/xsbuild/lib/stublibs/dlloclock_stubs.so.owner
-/usr/local/opam/xsbuild/lib/stublibs/dllstdext_stubs.so
-/usr/local/opam/xsbuild/lib/stublibs/dllstdext_stubs.so.owner
-/usr/local/opam/xsbuild/lib/stublibs/dllxenctrl_stubs.so
-/usr/local/opam/xsbuild/lib/stublibs/dllxenctrl_stubs.so.owner
-/usr/local/opam/xsbuild/lib/stublibs/dllxenctrlext_stubs.so
-/usr/local/opam/xsbuild/lib/stublibs/dllxenctrlext_stubs.so.owner
-/usr/local/opam/xsbuild/lib/stunnel/
-/usr/local/opam/xsbuild/lib/syslog/
-/usr/local/opam/xsbuild/lib/tapctl/
-/usr/local/opam/xsbuild/lib/uuid/
-/usr/local/opam/xsbuild/lib/uuidm/
-/usr/local/opam/xsbuild/lib/xen-utils/
-/usr/local/opam/xsbuild/lib/xenctrl/
-/usr/local/opam/xsbuild/lib/xenctrlext/
-/usr/local/opam/xsbuild/lib/xenstore-compat/
-/usr/local/opam/xsbuild/lib/xenstore/
-/usr/local/opam/xsbuild/lib/xenstore_transport/
-/usr/local/opam/xsbuild/lib/xml-light2/
-
 %files client-devel
 %defattr(-,root,root,-)
-/usr/local/opam/xsbuild/lib/xapi-client/*
+/usr/lib/ocaml/xapi-client/*
 
 %files datamodel-devel
 %defattr(-,root,root,-)
-/usr/local/opam/xsbuild/lib/xapi-datamodel/*
+/usr/lib/ocaml/xapi-datamodel/*
 
 %files rrd-devel
 %defattr(-,root,root,-)
-/usr/local/opam/xsbuild/lib/rrd-client/*
+/usr/lib/ocaml/rrd-client/*
 
 %files xenstore-watch-devel
 %defattr(-,root,root,-)
 /usr/lib/ocaml/xenstore-watch/*
 
-%files fe
-/etc/rc.d/init.d/fe
-/opt/xensource/libexec/fe
-
 %changelog
+
+
+
+
+
+
+
 
