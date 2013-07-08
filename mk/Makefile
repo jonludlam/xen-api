@@ -76,7 +76,7 @@ $(OUTPUT_CLI_RT) $(OUTPUT_SDK): $(MY_MAIN_PACKAGES)/.dirstamp $(RPM_DIRECTORIES)
 	rm -rf $(OUTPUT_DATAMODEL_DIR)
 	mkdir -p $(OUTPUT_DATAMODEL_DIR)/tmp
 	(cd $(OUTPUT_DATAMODEL_DIR)/tmp; rpm2cpio $(RPM_RPMSDIR)/$(DOMAIN0_ARCH_OPTIMIZED)/xapi-datamodel-devel*.rpm | cpio -i --make-directories)
-	mv $(OUTPUT_DATAMODEL_DIR)/tmp/usr/local/opam/xsbuild/lib/xapi-datamodel/* $(OUTPUT_DATAMODEL_DIR)
+	mv $(OUTPUT_DATAMODEL_DIR)/tmp/usr/lib/ocaml/xapi-datamodel/* $(OUTPUT_DATAMODEL_DIR)
 	rm -rf $(OUTPUT_DATAMODEL_DIR)/tmp
 
 	# Make sure the right RPMs appear on the install CD
@@ -94,11 +94,10 @@ $(OUTPUT_CLI_RT) $(OUTPUT_SDK): $(MY_MAIN_PACKAGES)/.dirstamp $(RPM_DIRECTORIES)
 	cp $(RPM_RPMSDIR)/$(DOMAIN0_ARCH_OPTIMIZED)/xapi-xenopsd-*.rpm $(MY_MAIN_PACKAGES)
 	mkdir -p $(MY_XCP_PACKAGES)
 	cp $(RPM_RPMSDIR)/$(DOMAIN0_ARCH_OPTIMIZED)/xapi-v6d-*.rpm $(MY_XCP_PACKAGES)
-	cp $(RPM_RPMSDIR)/$(DOMAIN0_ARCH_OPTIMIZED)/xapi-fe-*.rpm $(MY_MAIN_PACKAGES)
 
 .PHONY: clean
 clean:
 	rm -f $(OUTPUT_XAPI) $(OUTPUT_XAPI_DEVEL) $(OUTPUT_XAPI_SRC) $(OUTPUT_CLI_RT) $(OUTPUT_WEBZIP) $(OUTPUT_SDK)
 	rm -rf $(OUTPUT_DATAMODEL_DIR) $(OUTPUT_DOCS) $(OUTPUT_SDK_DIR)/tmp \
 	  $(MY_OUTPUT_DIR)/SRPMS $(RPM_RPMSDIR) $(MY_MAIN_PACKAGES) $(MY_XCP_PACKAGES)
-#	$(MAKE) -C $(REPO) clean
+	$(MAKE) -C $(REPO) clean
