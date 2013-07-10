@@ -43,7 +43,7 @@ start() {
 	fi
 	
 	xenstore-rm /squeezed
-	${SQUEEZED} -daemon true -pidfile ${PID_FILE} >/dev/null 2>&1 </dev/null
+	${SQUEEZED} -daemon -pidfile ${PID_FILE} >/dev/null 2>&1 </dev/null
 
 	MAX_RETRIES=30
 	RETRY=0
