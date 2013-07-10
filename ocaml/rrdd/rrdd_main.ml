@@ -679,7 +679,7 @@ let _ =
 	start (Rrdd_interface.xmlrpc_path, Rrdd_interface.http_fwd_path) Server.process;
 
 	debug "Starting xenstore-watching thread ..";
-        let (_: Thread.t) = Watcher.create_watcher_thread () in
+        let () = Watcher.create_watcher_thread () in
 
 	debug "Creating monitoring loop thread ..";
 	Debug.with_thread_associated "main" monitor_loop ();

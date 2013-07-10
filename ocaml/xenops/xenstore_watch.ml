@@ -140,29 +140,18 @@ module WatchXenstore = functor(Actions: WATCH_ACTIONS) -> struct
                                       Client.watch xs _introduceDomain "";
                                       Client.watch xs _releaseDomain "") in
 
-				while true do
-				  try
-                                    debug "(re)starting xenstore watch thread";
-                                    Xenctrl.with_intf register_for_watches;
-				    Thread.delay 5.
-				  with _ -> 
-                                    Thread.delay 5.
-				done
+                                debug "Starting xenstore watch thread";
+                                Xenctrl.with_intf register_for_watches;
+				()
 			)
 
-	let create_watcher_thread () =
-		Thread.create
-			(fun () ->
-				while true do
-					begin
-						try
-							Debug.with_thread_associated "xenstore" (watch_xenstore) ();
-							debug "watch_xenstore thread exitted"
-						with e ->
-							debug "watch_xenstore thread raised: %s" (Printexc.to_string e);
-							debug "watch_xenstore thread backtrace: %s" (Printexc.get_backtrace ())
-					end;
-					Thread.delay 5.
-				done
-			) ()
+	let rec create_watcher_thread () =
+	  try
+	    watch_xenstore ();
+	  with e -> 
+	    debug "watch_xenstore thread raised: %s" (Printexc.to_string e);
+	    debug "watch_xenstore thread backtrace: %s" (Printexc.get_backtrace ());
+	    Thread.delay 5.;
+	    create_watcher_thread ()
+
 end

@@ -2299,7 +2299,7 @@ let init () =
 			)
 		);
 
-	let (_: Thread.t) = Watcher.create_watcher_thread () in
+	let () = Watcher.create_watcher_thread () in
 	()
 
 module DEBUG = struct
