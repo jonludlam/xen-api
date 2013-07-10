@@ -124,25 +124,24 @@ module WatchXenstore = functor(Actions: WATCH_ACTIONS) -> struct
 						) different;
 					domains := domains' in
 
-				let process_one_watch xc c (path, token) =
+				let process_one_watch c (path, token) =
 				  if path = _introduceDomain || path = _releaseDomain
 				  then look_for_different_domains ()
 				  else 
 				    Client.with_xs c (fun h -> 
 				      let xs = Xs.ops h in
-				      Actions.watch_fired xc xs path !domains !watches) in
+				      Xenctrl.with_intf (fun xc -> Actions.watch_fired xc xs path !domains !watches)) in
 
-				let register_for_watches xc =
+				let register_for_watches () =
 				  let c = client () in
 				  Client.with_xs c
 				    (fun xs ->
-                                      Client.set_watch_callback c (process_one_watch xc c);
+                                      Client.set_watch_callback c (process_one_watch c);
                                       Client.watch xs _introduceDomain "";
                                       Client.watch xs _releaseDomain "") in
 
                                 debug "Starting xenstore watch thread";
-                                Xenctrl.with_intf register_for_watches;
-				()
+                                register_for_watches ()
 			)
 
 	let rec create_watcher_thread () =
