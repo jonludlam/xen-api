@@ -69,8 +69,10 @@ module WatchXenstore = functor(Actions: WATCH_ACTIONS) -> struct
 		List.map fst (IntMap.bindings c)
 
 	let watch_xenstore () =
-		with_xc_and_xs
-			(fun xc xs ->
+		let xc = Xenctrl.interface_open () in
+		try
+		  with_xs
+			(fun xs ->
 				let domains = ref IntMap.empty in
 				let watches = ref IntSet.empty in
 				let uuids = ref IntMap.empty in
@@ -130,7 +132,7 @@ module WatchXenstore = functor(Actions: WATCH_ACTIONS) -> struct
 				  else 
 				    Client.with_xs c (fun h -> 
 				      let xs = Xs.ops h in
-				      Xenctrl.with_intf (fun xc -> Actions.watch_fired xc xs path !domains !watches)) in
+				      Actions.watch_fired xc xs path !domains !watches) in
 
 				let register_for_watches () =
 				  let c = client () in
@@ -143,6 +145,10 @@ module WatchXenstore = functor(Actions: WATCH_ACTIONS) -> struct
                                 debug "Starting xenstore watch thread";
                                 register_for_watches ()
 			)
+		with e ->
+		  debug "Caught exception attempting to watch xenstore: %s" (Printexc.to_string e);
+		  Xenctrl.interface_close xc;
+		  raise e
 
 	let rec create_watcher_thread () =
 	  try
