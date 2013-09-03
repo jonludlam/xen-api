@@ -1,9 +1,10 @@
 #!/bin/sh
 
-echo xn list:
-xn list
+echo xenops-cli list:
+xenops-cli list
 echo
-echo xn list verbose:
-xn list verbose
+echo xenops-cli list -v:
+xenops-cli list -v
 echo
-xn diagnostics
+echo xenops-cli diagnostics:
+xenops-cli diagnostics

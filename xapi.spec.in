@@ -234,6 +234,10 @@ rm -rf $RPM_BUILD_ROOT
 @OPTDIR@/debug/rbac_static.csv
 /etc/xapi.d/host-post-declare-dead/10resetvdis
 /var/xapi
+/etc/xensource/bugtool/xenopsd.xml
+/etc/xensource/bugtool/xenopsd/stuff.xml
+@OPTDIR@/libexec/xn_diagnostics
+
 
 %files xe
 %defattr(-,root,root,-)
