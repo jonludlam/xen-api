@@ -128,6 +128,9 @@ end
 let handler req bio =
 	let fd = Buf_io.fd_of bio in (* fd only used for writing *)
 	let body = Http_svr.read_body ~limit:Xapi_globs.http_limit_max_rpc_size req bio in
+	if String.length body > (300 * 1024) then begin
+	  Unixext.write_string_to_file "/tmp/largerequest" body
+	end;
 	let body_xml = Xml.parse_string body in
 	let reply_xml = DBCacheRemoteListener.process_xmlrpc body_xml in
 	let response = Xml.to_bigbuffer reply_xml in
