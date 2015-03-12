@@ -371,7 +371,10 @@ let make_host ~verbose ~xc ~xs =
 					let memory_max_kib = max 0L (memory_max_kib -* (xen_max_offset_kib di.hvm_guest)) in
 					let can_balloon = Domain.get_feature_balloon cnx di.domid in
 					let has_guest_agent = Domain.get_guest_agent cnx di.domid in
-					let has_booted = can_balloon || has_guest_agent in
+					let has_booted = 
+					      (di.hvm_guest && has_guest_agent)
+					   || ((not di.hvm_guest) && (has_guest_agent || can_balloon))
+					in
 					(* Once the domain tells us it has booted, we assume it's not currently ballooning and
 					   record the offset between memory_actual and target. We assume this is constant over the 
 					   lifetime of the domain. *)
