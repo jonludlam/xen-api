@@ -125,6 +125,11 @@ let http_proxy_to_plugin req from name =
 	end else
 		http_proxy_to req from (Unix.ADDR_UNIX path)
 
+let call_xenvmd_on_srmaster req s sr_uuid =
+  let sr_uuid = Uuid.of_string sr_uuid in
+  let 
+		  
+		  
 let post_handler (req: Http.Request.t) s _ =
 	Xapi_http.with_context ~dummy:true "Querying services" req s
 		(fun __context ->
@@ -138,6 +143,8 @@ let post_handler (req: Http.Request.t) s _ =
 					http_proxy_to_plugin req s name
 				| [ ""; services; "SM" ] when services = _services ->
 					Storage_impl.Local_domain_socket.xmlrpc_handler Storage_mux.Server.process req (Buf_io.of_fd s) ()
+				| [ ""; services; "xenvmd"; sr_uuid ] when services = _services ->
+				        call_xenvmd_on_srmaster req s sr_uuid
 				| _ ->
 					Http_svr.headers s (Http.http_404_missing ~version:"1.0" ());
 					req.Http.Request.close <- true
