@@ -471,6 +471,10 @@ let list ~dbg =
 	List.map (fun id ->
 		(id,stat dbg id)) ids
 
+let killall ~dbg =
+	let m = State.map_of () in
+	List.iter (function (id, State.Send x) -> (try stop dbg id with _ -> ()) | _ -> ()) m
+
 let receive_start ~dbg ~sr ~vdi_info ~id ~similar =
 	let on_fail : (unit -> unit) list ref = ref [] in
 

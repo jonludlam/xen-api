@@ -796,7 +796,6 @@ let server_init() =
     Server_helpers.exec_with_new_task "server_init" (fun __context ->
     Startup.run ~__context [
     "XAPI SERVER STARTING", [], print_server_starting_message;
-    "Killing stray sparse_dd processes", [], Sparse_dd_wrapper.killall;
     "Parsing inventory file", [], Xapi_inventory.read_inventory;
     "Setting stunnel timeout", [], set_stunnel_timeout;
     "Initialising local database", [], init_local_database;
@@ -812,6 +811,8 @@ let server_init() =
 	"Starting SM internal event service", [], Storage_task.Updates.Scheduler.start;
 	"Starting SM service", [], Storage_access.start;
 	"Starting SM xapi event service", [], Storage_access.events_from_sm;
+    "Killing stray sparse_dd processes", [], Sparse_dd_wrapper.killall;
+    "Cancelling in-progress storage migrations", [], (fun () -> Storage_migrate.killall ~dbg:"xapi init");
     "Registering http handlers", [], (fun () -> List.iter Xapi_http.add_handler common_http_handlers);
     "Registering master-only http handlers", [ Startup.OnlyMaster ], (fun () -> List.iter Xapi_http.add_handler master_only_http_handlers);
     "Listening unix socket", [], (fun () -> listen_unix_socket Xapi_globs.unix_domain_socket);
