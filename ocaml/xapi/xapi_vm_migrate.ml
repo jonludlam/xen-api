@@ -686,7 +686,7 @@ let migrate_send'  ~__context ~vm ~dest ~live ~vdi_map ~vif_map ~options =
 					let vdis = XenAPI.VDI.get_all_records_where remote_rpc session_id query in
 
 					if List.length vdis <> 1 then error "Could not locate remote VDI: query='%s', length of results: %d" query (List.length vdis);
-					
+
 					let remote_vdi_reference = fst (List.hd vdis) in
 					XenAPI.VDI.destroy remote_rpc session_id remote_vdi_reference
 				with e ->

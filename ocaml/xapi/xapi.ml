@@ -812,7 +812,6 @@ let server_init() =
 	"Starting SM service", [], Storage_access.start;
 	"Starting SM xapi event service", [], Storage_access.events_from_sm;
     "Killing stray sparse_dd processes", [], Sparse_dd_wrapper.killall;
-    "Cancelling in-progress storage migrations", [], (fun () -> Storage_migrate.killall ~dbg:"xapi init");
     "Registering http handlers", [], (fun () -> List.iter Xapi_http.add_handler common_http_handlers);
     "Registering master-only http handlers", [ Startup.OnlyMaster ], (fun () -> List.iter Xapi_http.add_handler master_only_http_handlers);
     "Listening unix socket", [], (fun () -> listen_unix_socket Xapi_globs.unix_domain_socket);
@@ -964,7 +963,7 @@ let server_init() =
       "wait management interface to come up", [ Startup.NoExnRaising ], wait_management_interface;
       "considering sending a master transition alert", [ Startup.NoExnRaising; Startup.OnlyMaster ], 
           Xapi_pool_transition.consider_sending_alert __context;
-
+      "Cancelling in-progress storage migrations", [], (fun () -> Storage_migrate.killall ~dbg:"xapi init");
       (* Start the external authentification plugin *)
       "Calling extauth_hook_script_before_xapi_initialize", [ Startup.NoExnRaising ],
           (fun () -> call_extauth_hook_script_before_xapi_initialize ~__context);

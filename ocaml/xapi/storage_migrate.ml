@@ -24,7 +24,7 @@ open Pervasiveext
 open Xmlrpc_client
 open Threadext
 
-let local_url () = Http.Url.(Http { host="127.0.0.1"; auth=None; port=None; ssl=true }, { uri = "/services/SM"; query_params=["pool_secret",!Xapi_globs.pool_secret] } )
+let local_url () = Http.Url.(Http { host="127.0.0.1"; auth=None; port=None; ssl=false }, { uri = "/services/SM"; query_params=["pool_secret",!Xapi_globs.pool_secret] } )
 let remote_url ip = Http.Url.(Http { host=ip; auth=None; port=None; ssl=true }, { uri = "/services/SM"; query_params=["pool_secret",!Xapi_globs.pool_secret] } )
 
 open Storage_interface
@@ -159,7 +159,7 @@ let tapdisk_of_attach_info attach_info =
 			None
 		| _ -> 
 			debug "Device %s has an unknown driver" path;
-			None 
+			None
 
 
 let with_activated_disk ~dbg ~sr ~vdi f =
@@ -293,7 +293,7 @@ let stop ~dbg ~id =
 	(* Find the local VDI *)
 	let alm = State.find_active_local_mirror id in
 	match alm with 
-		| Some alm -> 
+		| Some alm ->
 			let sr,vdi = State.of_id id in
 			let vdis = Local.SR.scan ~dbg ~sr in
 			let local_vdi =
@@ -304,6 +304,16 @@ let stop ~dbg ~id =
 			(* Disable mirroring on the local machine *)
 			let snapshot = Local.VDI.snapshot ~dbg ~sr ~vdi_info:local_vdi in
 			Local.VDI.destroy ~dbg ~sr ~vdi:snapshot.vdi;
+			(* Destroy the snapshot, if it still exists *)
+			let snap = try Some (List.find (fun x -> List.mem_assoc "base_mirror" x.sm_config && List.assoc "base_mirror" x.sm_config = id) vdis) with _ -> None in
+			begin
+				match snap with
+				| Some s ->
+					debug "Found snapshot VDI: %s" s.vdi;
+					Local.VDI.destroy ~dbg ~sr ~vdi:s.vdi
+				| None ->
+					debug "Snapshot VDI already cleaned up"
+			end;
 			let remote_url = Http.Url.of_string alm.State.Send_state.remote_url in
 			let module Remote = Client(struct let rpc = rpc ~srcstr:"smapiv2" ~dststr:"dst_smapiv2" remote_url end) in
 			(try Remote.DATA.MIRROR.receive_cancel ~dbg ~id with _ -> ());
@@ -473,7 +483,19 @@ let list ~dbg =
 
 let killall ~dbg =
 	let m = State.map_of () in
-	List.iter (function (id, State.Send x) -> (try stop dbg id with _ -> ()) | _ -> ()) m
+	List.iter (function
+		| (id, State.Send x) ->
+			begin
+				debug "Send in progress: %s" id;
+				try
+					Local.DP.destroy ~dbg ~dp:x.local_dp ~allow_leak:true;
+					stop dbg id
+				with _ -> ()
+			end 
+		| (id, _) ->
+			debug "Receive in progress: %s" id; 
+			()
+	) m
 
 let receive_start ~dbg ~sr ~vdi_info ~id ~similar =
 	let on_fail : (unit -> unit) list ref = ref [] in

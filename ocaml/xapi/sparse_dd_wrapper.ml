@@ -170,6 +170,7 @@ let cancel t =
 let killall () =
 	let pids = State.list () in
 	List.iter (fun pid ->
+		debug "pid: %d" pid;
 		try
 			Pervasiveext.finally 
 				(fun () -> 
