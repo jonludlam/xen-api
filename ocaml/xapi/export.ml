@@ -542,6 +542,8 @@ let handler (req: Request.t) s _ =
   (* Perform the SR reachability check using a fresh context/task because
      we don't want to complete the task in the forwarding case *)
   
+  Thread.delay 10.0;
+
   Server_helpers.exec_with_new_task "VM.export" 
     (fun __context -> 
        (* The VM Ref *)
