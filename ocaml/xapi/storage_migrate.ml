@@ -365,7 +365,9 @@ let copy' ~task ~dbg ~sr ~vdi ~url ~dest ~dest_vdi =
 		Remote.VDI.set_content_id ~dbg ~sr:dest ~vdi:dest_vdi ~content_id:local_vdi.content_id;
 		(* PR-1255: XXX: this is useful because we don't have content_ids by default *)
 		debug "setting local=%s/%s content_id <- %s" sr local_vdi.vdi local_vdi.content_id;
-		Local.VDI.set_content_id ~dbg ~sr ~vdi:local_vdi.vdi ~content_id:local_vdi.content_id;
+   Local.VDI.set_content_id ~dbg ~sr ~vdi:local_vdi.vdi ~content_id:local_vdi.content_id;
+   debug "Removing state";
+		State.remove_copy id;
 		Some (Vdi_info remote_vdi)
 	with e ->
 		error "Caught %s: performing cleanup actions" (Printexc.to_string e);
@@ -398,7 +400,13 @@ let stop ~dbg ~id =
 			(* Disable mirroring on the local machine *)
 			let snapshot = Local.VDI.snapshot ~dbg ~sr ~vdi_info:local_vdi in
 			Local.VDI.destroy ~dbg ~sr ~vdi:snapshot.vdi;
+   debug "Cancelling watchdog";
+   let dump = Updates.Scheduler.Dump.make () |> Updates.Scheduler.Dump.rpc_of_t |> Rpc.to_string in
+   debug "Dump=%s" dump;
+   debug "watchdog=%s" (match alm.State.Send_state.watchdog with None -> "None" | Some (i64,i) -> Printf.sprintf "Some (%Ld,%d)" i64 i);
+			Opt.iter (fun id -> let (i64,i) = id in debug "(%Ld,%d)" i64 i; Updates.Scheduler.cancel id) alm.State.Send_state.watchdog;
 			(* Destroy the snapshot, if it still exists *)
+   
 			let snap = try Some (List.find (fun x -> List.mem_assoc "base_mirror" x.sm_config && List.assoc "base_mirror" x.sm_config = id) vdis) with _ -> None in
 			begin
 				match snap with
@@ -410,7 +418,7 @@ let stop ~dbg ~id =
 			end;
 			let remote_url = Http.Url.of_string alm.State.Send_state.remote_url in
 			let module Remote = Client(struct let rpc = rpc ~srcstr:"smapiv2" ~dststr:"dst_smapiv2" remote_url end) in
-			(try Remote.DATA.MIRROR.receive_cancel ~dbg ~id with _ -> ());
+			(try Remote.DATA.MIRROR.receive_cancel ~dbg ~id with e -> debug "Ignoring exception while cancelling receive: %s" (Printexc.to_string e));
 			State.remove_local_mirror id
 		| None ->
 			raise (Does_not_exist ("mirror",id))
@@ -505,10 +513,15 @@ let start' ~task ~dbg ~sr ~vdi ~dp ~url ~dest =
 		begin
 			let rec inner () =
 				debug "tapdisk watchdog";
-				let stats = Tapctl.stats (Tapctl.create ()) tapdev in
+    let tmp = match State.find_active_local_mirror id with | Some x -> x | None -> failwith "Argh!" in
+    tmp.State.Send_state.watchdog <- Some (Updates.Scheduler.one_shot (Updates.Scheduler.Delta 5) "tapdisk_watchdog" inner);
+    debug "tapdisk watchdog continues...";
+    debug "test: tmp.watchdog = %s" (match tmp.State.Send_state.watchdog with | None -> "None" | Some (i64,i) -> Printf.sprintf "Some (%Ld,%d)" i64 i);
+    let stats = Tapctl.stats (Tapctl.create ()) tapdev in
 				if stats.Tapctl.Stats.nbd_mirror_failed = 1 then
 					Updates.add (Dynamic.Mirror id) updates;
-				alm.State.Send_state.watchdog <- Some (Updates.Scheduler.one_shot (Updates.Scheduler.Delta 5) "tapdisk_watchdog" inner)
+
+    
 			in inner ()
 		end;
 
@@ -697,6 +710,7 @@ let receive_finalize ~dbg ~id =
 	State.remove_receive_mirror id
 
 let receive_cancel ~dbg ~id =
+        debug "Do we ever get here?";
 	let receive_state = State.find_active_receive_mirror id in
 	let open State.Receive_state in Opt.iter (fun r ->
 		log_and_ignore_exn (fun () -> Local.DP.destroy ~dbg ~dp:r.leaf_dp ~allow_leak:false);

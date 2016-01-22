@@ -202,63 +202,103 @@ type mirror_record = {
 }
 
 (* If VM's suspend_SR is set to the local SR, it won't be visible to
-   the destination host after an intra-pool storage migrate *)
+   the destination host after an intra-pool storage migrate. Returns
+   a function to undo the operation if an error occurs. *)
 let intra_pool_fix_suspend_sr ~__context host vm =
   let sr = Db.VM.get_suspend_SR ~__context ~self:vm in
   if not (Helpers.host_has_pbd_for_sr ~__context ~host ~sr)
-  then Db.VM.set_suspend_SR ~__context ~self:vm ~value:Ref.null
+  then begin
+    Db.VM.set_suspend_SR ~__context ~self:vm ~value:Ref.null;
+    fun () -> Db.VM.set_suspend_SR ~__context ~self:vm ~value:sr
+  end else fun () -> ()
 
-let intra_pool_vdi_remap ~__context vm vdi_map =
-  let vbds = Db.VM.get_VBDs ~__context ~self:vm in
-  let vdis_and_callbacks = List.map (fun vbd ->
-      let vdi = Db.VBD.get_VDI ~__context ~self:vbd in
-      let callback mapto =
-        Db.VBD.set_VDI ~__context ~self:vbd ~value:mapto;
-        let other_config_record = Db.VDI.get_other_config ~__context ~self:vdi in
-        List.iter (fun key ->
-            Db.VDI.remove_from_other_config ~__context ~self:mapto ~key;
-            try Db.VDI.add_to_other_config ~__context ~self:mapto ~key ~value:(List.assoc key other_config_record) with Not_found -> ()
-          ) Xapi_globs.vdi_other_config_sync_keys in
-      vdi, callback
-    ) vbds in
-  let suspend_vdi = Db.VM.get_suspend_VDI ~__context ~self:vm in
-  let vdis_and_callbacks =
-    if suspend_vdi = Ref.null then vdis_and_callbacks
-    else (suspend_vdi, fun v -> Db.VM.set_suspend_VDI ~__context ~self:vm ~value:v) :: vdis_and_callbacks in
-  List.iter
-    (fun (vdi,callback) ->
-       try
-         let mirror_record = List.find (fun mr -> mr.mr_local_vdi_reference = vdi) vdi_map in
-         callback mirror_record.mr_remote_vdi_reference
-       with
-         Not_found -> ())
-    vdis_and_callbacks
+let best_effort_refresh ~__context ~self =
+  try
+    Xapi_xenops.Events_from_xapi.wait ~__context ~self;
+    Xapi_xenops.refresh_vm ~__context ~self;
+  with _ -> ()
+     
+let intra_pool_with_remapped_vdis ~__context vms dest_host_ref vdi_map continuation =
+  let process_vm vm =
+    let vbds = Db.VM.get_VBDs ~__context ~self:vm in
+    let vdis_and_callbacks = List.map (fun vbd ->
+        let vdi = Db.VBD.get_VDI ~__context ~self:vbd in
+        let callback mapto =
+          Db.VBD.set_VDI ~__context ~self:vbd ~value:mapto;
+          let other_config_record = Db.VDI.get_other_config ~__context ~self:vdi in
+          List.iter (fun key ->
+              Db.VDI.remove_from_other_config ~__context ~self:mapto ~key;
+              try Db.VDI.add_to_other_config ~__context ~self:mapto ~key ~value:(List.assoc key other_config_record) with Not_found -> ()
+            ) Xapi_globs.vdi_other_config_sync_keys in
+        let reset () = Db.VBD.set_VDI ~__context ~self:vbd ~value:vdi in
+        vdi, callback, reset
+      ) vbds in
+    let suspend_vdi = Db.VM.get_suspend_VDI ~__context ~self:vm in
+    let per_vm_vdis_and_callbacks =
+      if suspend_vdi = Ref.null then vdis_and_callbacks
+      else (suspend_vdi,
+            (fun v -> Db.VM.set_suspend_VDI ~__context ~self:vm ~value:v),
+            (fun () -> Db.VM.set_suspend_VDI ~__context ~self:vm ~value:suspend_vdi)) :: vdis_and_callbacks in
+    per_vm_vdis_and_callbacks
+  in
+  let vdis_and_callbacks = List.concat (List.map process_vm vms) in
+  let suspend_sr_resets = List.map (intra_pool_fix_suspend_sr ~__context dest_host_ref) vms in
+  let vbd_resets = List.filter_map
+      (fun (vdi,callback,reset) ->
+         try
+           let mirror_record = List.find (fun mr -> mr.mr_local_vdi_reference = vdi) vdi_map in
+           callback mirror_record.mr_remote_vdi_reference;
+           Some reset
+         with
+           Not_found -> None)
+      vdis_and_callbacks
+  in
+  let resets = suspend_sr_resets @ vbd_resets in
+  let vm = List.hd vms in
+  try
+    continuation vms
+  with e ->
+    Backtrace.is_important e;
+    (* Synchronise with xenopsd first - make sure the events trigged by setting the VDIs above have been
+       processed *)
+(*    best_effort_refresh ~__context ~self:vm;
+    error "Exception caught: Resetting VDIs";
+      List.iter (fun reset -> try reset () with _ -> ()) resets;*)
+    ignore(resets);
+    (* Now, again, make sure we've processed the events before moving on *)
+    best_effort_refresh ~__context ~self:vm;
+    raise e
 
-let inter_pool_metadata_transfer ~__context ~remote_rpc ~session_id ~remote_address ~vm ~vdi_map ~vif_map ~dry_run ~live ~copy =
+let inter_pool_metadata_transfer ~__context ~remote_rpc ~session_id ~remote_address ~vm ~vdi_map ~vif_map ~dry_run ~live ~copy continuation =
   List.iter (fun mirror_record ->
       let vdi = mirror_record.mr_local_vdi_reference in
       Db.VDI.remove_from_other_config ~__context ~self:vdi ~key:Constants.storage_migrate_vdi_map_key;
       Db.VDI.add_to_other_config ~__context ~self:vdi ~key:Constants.storage_migrate_vdi_map_key ~value:(Ref.string_of mirror_record.mr_remote_vdi_reference)) vdi_map;
-
+  
   List.iter (fun (vif,network) ->
       Db.VIF.remove_from_other_config ~__context ~self:vif ~key:Constants.storage_migrate_vif_map_key;
       Db.VIF.add_to_other_config ~__context ~self:vif ~key:Constants.storage_migrate_vif_map_key ~value:(Ref.string_of network)) vif_map;
-
+  
   let vm_export_import = {
     Importexport.vm = vm; dry_run = dry_run; live = live; send_snapshots = not copy;
   } in
-  finally
-    (fun () ->
-       Importexport.remote_metadata_export_import ~__context
-         ~rpc:remote_rpc ~session_id ~remote_address ~restore:(not copy) (`Only vm_export_import))
-    (fun () ->
-       (* Make sure we clean up the remote VDI and VIF mapping keys. *)
-       List.iter
-         (fun mr -> Db.VDI.remove_from_other_config ~__context ~self:mr.mr_local_vdi_reference ~key:Constants.storage_migrate_vdi_map_key)
-         vdi_map;
-       List.iter
-         (fun (vif, _) -> Db.VIF.remove_from_other_config ~__context ~self:vif ~key:Constants.storage_migrate_vif_map_key)
-         vif_map)
+  let vms = finally (fun () ->
+    Importexport.remote_metadata_export_import ~__context
+      ~rpc:remote_rpc ~session_id ~remote_address ~restore:(not copy) (`Only vm_export_import))
+  (fun () ->
+     (* Make sure we clean up the remote VDI and VIF mapping keys. *)
+     List.iter
+       (fun mr -> Db.VDI.remove_from_other_config ~__context ~self:mr.mr_local_vdi_reference ~key:Constants.storage_migrate_vdi_map_key)
+       vdi_map;
+     List.iter
+       (fun (vif, _) -> Db.VIF.remove_from_other_config ~__context ~self:vif ~key:Constants.storage_migrate_vif_map_key)
+       vif_map)
+  in
+  try
+    continuation vms
+  with e ->
+    Backtrace.is_important e;
+    raise e
 
 module VDIMap = Map.Make(struct type t = API.ref_VDI let compare = compare end)
 let update_snapshot_info ~__context ~dbg ~url ~vdi_map ~snapshots_map =
@@ -678,31 +718,26 @@ let migrate_send'  ~__context ~vm ~dest ~live ~vdi_map ~vif_map ~options =
       wait_for_fist __context Xapi_fist.pause_storage_migrate "pause_storage_migrate";
 
       TaskHelper.exn_if_cancelling ~__context;
-
-      let new_vm =
+      
+      (* Make sure HA replaning cycle won't occur right during the import process or immediately after *)
+      let () = if (not is_intra_pool) && ha_always_run_reset then XenAPI.Pool.ha_prevent_restarts_for ~rpc:remote_rpc ~session_id:remote_session ~seconds:(Int64.of_float !Xapi_globs.ha_monitor_interval) in
+      
+      let new_vm_fn =
         if is_intra_pool
-        then begin
-          List.iter
-            (fun vm' ->
-               intra_pool_vdi_remap ~__context vm' (suspends_map @ snapshots_map @ vdi_map);
-               intra_pool_fix_suspend_sr ~__context dest_host_ref vm')
-            vm_and_snapshots;
-          vm
-        end
-        else
-          (* Make sure HA replaning cycle won't occur right during the import process or immediately after *)
-          let () = if ha_always_run_reset then XenAPI.Pool.ha_prevent_restarts_for ~rpc:remote_rpc ~session_id:remote_session ~seconds:(Int64.of_float !Xapi_globs.ha_monitor_interval) in
-          (* Move the xapi VM metadata to the remote pool. *)
-          let vms =
-            inter_pool_metadata_transfer ~__context ~remote_rpc ~session_id:remote_session
-              ~remote_address ~vm ~vdi_map:(suspends_map @ snapshots_map @ vdi_map)
-              ~vif_map ~dry_run:false ~live:true ~copy in
-          let vm = List.hd vms in
-          let () = if ha_always_run_reset then XenAPI.VM.set_ha_always_run ~rpc:remote_rpc ~session_id:remote_session ~self:vm ~value:false in
-          vm in
+        then intra_pool_with_remapped_vdis ~__context vm_and_snapshots dest_host_ref (suspends_map @ snapshots_map @ vdi_map)
+        else inter_pool_metadata_transfer ~__context ~remote_rpc ~session_id:remote_session ~remote_address ~vm ~vdi_map:(suspends_map @ snapshots_map @ vdi_map)
+            ~vif_map ~dry_run:false ~live:true ~copy in
+
+      new_vm_fn @@ fun new_vms ->
+
+      let new_vm = List.hd new_vms in
+      
+      let () = if (not is_intra_pool) && ha_always_run_reset then XenAPI.VM.set_ha_always_run ~rpc:remote_rpc ~session_id:remote_session ~self:new_vm ~value:false in
 
       wait_for_fist __context Xapi_fist.pause_storage_migrate2 "pause_storage_migrate2";
 
+      ignore(failwith "XXXXX failure");
+      
       (* Attach networks on remote *)
       XenAPI.Network.attach_for_vm ~rpc:remote_rpc ~session_id:remote_session ~host:dest_host_ref ~vm:new_vm;
 
@@ -717,7 +752,9 @@ let migrate_send'  ~__context ~vm ~dest ~live ~vdi_map ~vif_map ~options =
           ) vifs
       in
 
-      (* Destroy the local datapaths - this allows the VDIs to properly detach, invoking the migrate_finalize calls *)
+      (* Destroy the local datapaths - this allows the VDIs to properly detach, invoking the migrate_finalize calls.
+         At the point, even the best case error path leaves the VM shutdown, so this is safe to do without worrying
+         about reinstating the datapath in an exception handler.*)
       List.iter (fun mirror_record ->
           if mirror_record.mr_mirrored
           then SMAPI.DP.destroy ~dbg ~dp:mirror_record.mr_dp ~allow_leak:false) (suspends_map @ snapshots_map @ vdi_map);
@@ -926,7 +963,7 @@ let assert_can_migrate  ~__context ~vm ~dest ~live ~vdi_map ~vif_map ~options =
 
     (* Ignore vdi_map for now since we won't be doing any mirroring. *)
     try
-      assert (inter_pool_metadata_transfer ~__context ~remote_rpc ~session_id ~remote_address ~vm ~vdi_map:[] ~vif_map ~dry_run:true ~live:true ~copy = [])
+      assert (inter_pool_metadata_transfer ~__context ~remote_rpc ~session_id ~remote_address ~vm ~vdi_map:[] ~vif_map ~dry_run:true ~live:true ~copy (fun _ -> ()) = ())
     with Xmlrpc_client.Connection_reset ->
       raise (Api_errors.Server_error(Api_errors.cannot_contact_host, [remote_address]))
 
