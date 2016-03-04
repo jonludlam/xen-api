@@ -1322,7 +1322,7 @@ module Events = struct
     debug "suppressing xenops events on VM: %s" vm_id;
     let module Client = (val make_client queue_name : XENOPS) in
     Mutex.execute suppressed_on_m (fun () ->
-      Hashtbl.add suppressed_xenopsd vm_id ()
+      Hashtbl.add suppressed_xenopsd vm_id ();
       Hashtbl.add suppressed_xapi vm_id ()
     );
 
@@ -1335,7 +1335,7 @@ module Events = struct
           Events_from_xenopsd.wait queue_name dbg vm_id ();
           Hashtbl.remove suppressed_xapi vm_id;
           Events_from_xapi.wait __context self;
-          Condition.broadcast suppressed_on_c;
+          Condition.broadcast suppressed_on_c
         end else while are_suppressed vm_id do
 	  debug "waiting for events to become re-enabled";
           Condition.wait suppressed_on_c suppressed_on_m
