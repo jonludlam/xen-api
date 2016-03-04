@@ -2016,7 +2016,7 @@ let on_xapi_restart ~__context =
 		Client.VM.remove dbg id
 	) xenopsd_vms_not_in_xapi;
 
-	List.iter add_caches xenopsd_vms_in_xapi;
+	List.iter (fun ((id, _), _) -> add_caches id) xenopsd_vms_in_xapi;
 
 	(* Sync VM state in Xapi for VMs running by local Xenopsds *)
 	List.iter (fun ((id, state), queue_name) ->
