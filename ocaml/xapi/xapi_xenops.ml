@@ -1336,7 +1336,7 @@ module Events = struct
           Hashtbl.remove suppressed_xapi vm_id;
           Events_from_xapi.wait __context self;
           Condition.broadcast suppressed_on_c
-        end else while are_suppressed vm_id do
+        end else while are_suppressed_xenopsd vm_id do
 	  debug "waiting for events to become re-enabled";
           Condition.wait suppressed_on_c suppressed_on_m
 	done;
