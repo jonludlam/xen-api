@@ -1333,13 +1333,13 @@ module Events = struct
           debug "re-enabled xenops events on VM: %s; refreshing VM" vm_id;
           Client.UPDATES.refresh_vm dbg vm_id;
           Events_from_xenopsd.wait queue_name dbg vm_id ();
+          Hashtbl.remove suppressed_xapi vm_id;
           Events_from_xapi.wait __context self;
           Condition.broadcast suppressed_on_c;
         end else while are_suppressed vm_id do
 	  debug "waiting for events to become re-enabled";
           Condition.wait suppressed_on_c suppressed_on_m
 	done;
-        Hashtbl.remove suppressed_xapi vm_id;
       );
     )
 end
