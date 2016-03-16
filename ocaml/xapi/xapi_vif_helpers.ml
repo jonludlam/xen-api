@@ -175,7 +175,8 @@ let create ~__context ~device ~network ~vM
            ~currently_attached ~locking_mode ~ipv4_allowed ~ipv6_allowed
            ~ipv4_configuration_mode ~ipv4_addresses ~ipv4_gateway
            ~ipv6_configuration_mode ~ipv6_addresses ~ipv6_gateway : API.ref_VIF =
-        let () = debug "VIF.create running" in
+
+	ignore(Db.Network.get_uuid ~__context ~self:network);
 
 	if locking_mode = `locked || ipv4_allowed <> [] || ipv6_allowed <> [] then
 		assert_locking_licensed ~__context;
