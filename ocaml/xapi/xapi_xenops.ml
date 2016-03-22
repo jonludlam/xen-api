@@ -967,6 +967,22 @@ let vm_exists_in_xenopsd queue_name dbg id =
 	let module Client = (val make_client queue_name : XENOPS) in
 	Client.VM.exists dbg id
 
+let vm_xenopsd_power_state queue_name dbg id =
+	let module Client = (val make_client queue_name : XENOPS) in
+	if Client.VM.exists dbg id
+	then
+		let _, state = Client.VM.stat dbg id in
+		Some state.Vm.power_state
+	else
+		None
+
+let assert_xenopsd_power_state_ok queue_name dbg id acceptible =
+	match vm_xenopsd_power_state queue_name dbg id with
+	| None -> ()
+	| Some x ->
+		if not (List.mem x acceptible)
+		then raise (Bad_power_state (x, List.hd acceptible))
+
 let string_of_exn = function
 	| Api_errors.Server_error(code, params) -> Printf.sprintf "%s [ %s ]" code (String.concat "; " params)
 	| e -> Printexc.to_string e
@@ -2380,7 +2396,6 @@ let maybe_cleanup_vm ~__context ~self =
 		 * will be called with events enabled and therefore we get Xenopsd into a
 		 * consistent state with Xapi *)
 		Events_from_xenopsd.with_suppressed queue_name dbg id (fun _ -> ());
-		Xenopsd_metadata.delete ~__context id;
 	end
 
 let start ~__context ~self paused =
@@ -2389,8 +2404,7 @@ let start ~__context ~self paused =
 	let vm_id = id_of_vm ~__context ~self in
 	transform_xenops_exn ~__context ~vm:self queue_name (fun () ->
 		maybe_cleanup_vm ~__context ~self;
-		if vm_exists_in_xenopsd queue_name dbg vm_id then
-			raise (Bad_power_state (Running, Halted));
+		assert_xenopsd_power_state_ok queue_name dbg vm_id [Halted];
 		(* For all devices which we want xenopsd to manage, set currently_attached = true
 		   so the metadata is pushed. *)
 		let vbds =
@@ -2466,8 +2480,7 @@ let reboot ~__context ~self timeout =
 			let dbg = Context.string_of_task __context in
 			maybe_cleanup_vm ~__context ~self;
 			(* If Xenopsd no longer knows about the VM after cleanup it was shutdown *)
-			if not (vm_exists_in_xenopsd queue_name dbg id) then
-				raise (Bad_power_state (Halted, Running));
+			assert_xenopsd_power_state_ok queue_name dbg id [Running];
 			(* Ensure we have the latest version of the VM metadata before the reboot *)
 			Events_from_xapi.wait ~__context ~self;
 			info "xenops: VM.reboot %s" id;
@@ -2555,8 +2568,8 @@ let resume ~__context ~self ~start_paused ~force =
 	transform_xenops_exn ~__context ~vm:self queue_name
 		(fun () ->
 			maybe_cleanup_vm ~__context ~self;
-			if vm_exists_in_xenopsd queue_name dbg vm_id then
-				raise (Bad_power_state (Running, Suspended));
+			assert_xenopsd_power_state_ok queue_name dbg vm_id [Halted];
+
 			let vdi = Db.VM.get_suspend_VDI ~__context ~self in
 			let disk = disk_of_vdi ~__context ~self:vdi |> Opt.unbox in
 			let module Client = (val make_client queue_name : XENOPS) in
