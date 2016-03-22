@@ -1387,14 +1387,19 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 			with_vm_operation ~__context ~self:vm ~doc:"VM.hard_reboot" ~op:`hard_reboot
 				(fun () ->
 					(* Before doing the reboot we might need to cancel existing operations *)
-					List.iter (fun (task,op) ->
-						if List.mem op [ `clean_shutdown; `clean_reboot; `pool_migrate; `call_plugin ] then (
+					let cancelled = List.filter_map (fun (task,op) ->
+						if List.mem op [ `clean_shutdown; `clean_reboot; `pool_migrate; `call_plugin; `suspend ] then (
 							(* We must do the cancelling in a subtask: see hard_shutdown comment for reason. *)
 							Server_helpers.exec_with_subtask ~__context
 								("Cancelling VM." ^ (Record_util.vm_operation_to_string op) ^ " for VM.hard_reboot")
-								(fun ~__context -> try Task.cancel ~__context ~task:(Ref.of_string task) with _ -> ())
-						)
-					) (Db.VM.get_current_operations ~__context ~self:vm);
+								(fun ~__context -> try Task.cancel ~__context ~task:(Ref.of_string task) with _ -> ());
+							Some (Ref.of_string task))
+						else
+							None
+					) (Db.VM.get_current_operations ~__context ~self:vm) in
+
+                                        wait_for_tasks ~__context ~tasks:cancelled;
+     
 					with_vbds_marked ~__context ~vm ~doc:"VM.hard_reboot" ~op:`attach
 						(fun vbds ->
 							with_vifs_marked ~__context ~vm ~doc:"VM.hard_reboot" ~op:`attach
