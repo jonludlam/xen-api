@@ -224,8 +224,11 @@ let loadbalance_host_operation ~__context ~hosts ~doc ~op (f: API.ref_host -> un
 let wait_for_tasks ~__context ~tasks =
   let classes = List.map (fun x -> Printf.sprintf "task/%s" (Ref.string_of x)) tasks in
 
+  List.iter (fun cls -> debug "Waiting for task: %s" cls) classes;
+  
   let rec process token =
     let statuses = List.filter_map (fun task -> try Some (Db.Task.get_status ~__context ~self:task) with _ -> None) tasks in
+    List.iter (fun state -> let s = API.rpc_of_task_status_type state |> Rpc.to_string in debug "state=%s" s) statuses;
     let finished = List.exists (fun state -> state = `pending) statuses in
     if not finished
     then
