@@ -221,6 +221,21 @@ let loadbalance_host_operation ~__context ~hosts ~doc ~op (f: API.ref_host -> un
 			with
 			  _ -> ())
 
+let wait_for_tasks ~__context ~tasks =
+  let classes = List.map (fun x -> Printf.sprintf "task/%s" (Ref.string_of x)) tasks in
+
+  let rec process token =
+    let statuses = List.filter_map (fun task -> try Some (Db.Task.get_status ~__context ~self:task) with _ -> None) tasks in
+    let finished = List.exists (fun state -> state = `pending) statuses in
+    if not finished
+    then
+      let from = Xapi_event.from ~__context ~classes ~token ~timeout:30.0 |> Event_types.event_from_of_rpc in
+      process from.Event_types.token
+    else
+      ()
+  in
+  process ""
+
 module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 
 	(* During certain operations that are executed on a pool slave, the slave management can reconfigure
@@ -1320,7 +1335,7 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 			with_vm_operation ~__context ~self:vm ~doc:"VM.hard_shutdown" ~op:`hard_shutdown
 				(fun () ->
 					(* Before doing the shutdown we might need to cancel existing operations *)
-					List.iter (fun (task,op) ->
+                                        let cancelled = List.filter_map (fun (task,op) ->
 						if List.mem op [ `clean_shutdown; `clean_reboot; `hard_reboot; `pool_migrate; `call_plugin ] then (
 							(* At the end of the cancellation, if the VM is on a slave then the task doing
 							 * the cancellation will be marked complete (successful).  This would be premature
@@ -1328,10 +1343,14 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 							 * cancellations, then definitely the VM hard_shutdown. Therefore we must spawn
 							 * a new task to do the cancellation. (But no need to go via API call.) *)
 							Server_helpers.exec_with_subtask ~__context
-								("Cancelling VM." ^ (Record_util.vm_operation_to_string op) ^ " for VM.hard_shutdown")
-								(fun ~__context -> try Task.cancel ~__context ~task:(Ref.of_string task) with _ -> ())
-						)
-					) (Db.VM.get_current_operations ~__context ~self:vm);
+                                                                ("Cancelling VM." ^ (Record_util.vm_operation_to_string op) ^ " for VM.hard_shutdown")
+                                                                (fun ~__context -> try Task.cancel ~__context ~task:(Ref.of_string task) with _ -> ());
+                                                        Some (Ref.of_string task))
+                                                else
+                                                        None
+					) (Db.VM.get_current_operations ~__context ~self:vm) in
+
+                                        wait_for_tasks ~__context ~tasks:cancelled;
 
 					(* If VM is actually suspended and we ask to hard_shutdown, we need to
 					   forward to any host that can see the VDIs *)
