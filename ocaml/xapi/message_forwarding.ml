@@ -1395,7 +1395,7 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 
 		let hard_reboot ~__context ~vm =
 			info "VM.hard_reboot: VM = '%s'" (vm_uuid ~__context vm);
-			let local_fn = Local.VM.hard_reboot ~vm in
+
 			with_vm_operation ~__context ~self:vm ~doc:"VM.hard_reboot" ~op:`hard_reboot
 				(fun () ->
 					(* Before doing the reboot we might need to cancel existing operations *)
@@ -1410,7 +1410,7 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 							None
 					) (Db.VM.get_current_operations ~__context ~self:vm) in
 
-
+					let local_fn ~__context = wait_for_tasks ~__context ~tasks:cancelled; Local.VM.hard_reboot ~vm in
      
 					with_vbds_marked ~__context ~vm ~doc:"VM.hard_reboot" ~op:`attach
 						(fun vbds ->
