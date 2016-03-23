@@ -1410,7 +1410,7 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 							None
 					) (Db.VM.get_current_operations ~__context ~self:vm) in
 
-                                        wait_for_tasks ~__context ~tasks:cancelled;
+
      
 					with_vbds_marked ~__context ~vm ~doc:"VM.hard_reboot" ~op:`attach
 						(fun vbds ->
@@ -1419,7 +1419,9 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 									(* CA-31903: we don't need to reserve memory for reboot because the memory settings can't
 									   change across reboot. *)
 									forward_vm_op ~local_fn ~__context ~vm
-										(fun session_id rpc -> Client.VM.hard_reboot rpc session_id vm))));
+										(fun session_id rpc ->
+											wait_for_tasks ~__context ~tasks:cancelled;
+											Client.VM.hard_reboot rpc session_id vm))));
 			let uuid = Db.VM.get_uuid ~__context ~self:vm in
 			let message_body =
 				Printf.sprintf "VM '%s' rebooted forcibly"
