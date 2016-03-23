@@ -229,8 +229,8 @@ let wait_for_tasks ~__context ~tasks =
   let rec process token =
     let statuses = List.filter_map (fun task -> try Some (Db.Task.get_status ~__context ~self:task) with _ -> None) tasks in
     List.iter (fun state -> let s = API.rpc_of_task_status_type state |> Rpc.to_string in debug "state=%s" s) statuses;
-    let finished = List.exists (fun state -> state = `pending) statuses in
-    if not finished
+    let unfinished = List.exists (fun state -> state = `pending) statuses in
+    if unfinished
     then
       let from = Xapi_event.from ~__context ~classes ~token ~timeout:30.0 |> Event_types.event_from_of_rpc in
       process from.Event_types.token
