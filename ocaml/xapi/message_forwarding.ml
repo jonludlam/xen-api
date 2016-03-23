@@ -221,6 +221,11 @@ let loadbalance_host_operation ~__context ~hosts ~doc ~op (f: API.ref_host -> un
 			with
 			  _ -> ())
 
+let rec rpc_fix_int = function
+  | Rpc.Dict list -> Rpc.Dict (List.map (fun (k,v) -> (k, rpc_fix_int v)) list)
+  | Rpc.Int32 x -> Rpc.Int (Int64.of_int32 x)
+  | x -> x
+
 let wait_for_tasks ~__context ~tasks =
   let classes = List.map (fun x -> Printf.sprintf "task/%s" (Ref.string_of x)) tasks in
 
@@ -233,7 +238,7 @@ let wait_for_tasks ~__context ~tasks =
     if unfinished
     then begin
       let from = Xapi_event.from ~__context ~classes ~token ~timeout:30.0 in
-      let trans = Xmlrpc.to_string from |> Xmlrpc.of_string in
+      let trans = rpc_fix_int from in
       Unixext.write_string_to_file "/tmp/from.rpc" (Rpc.to_string from);
       Unixext.write_string_to_file "/tmp/from.trans.rpc" (Rpc.to_string trans);
       let from = Event_types.event_from_of_rpc trans in
