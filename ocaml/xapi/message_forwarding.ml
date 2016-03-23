@@ -233,8 +233,10 @@ let wait_for_tasks ~__context ~tasks =
     if unfinished
     then begin
       let from = Xapi_event.from ~__context ~classes ~token ~timeout:30.0 in
-      Unixext.write_string_to_file "/tmp/from.rpc" (Rpc.to_string from);     
-      let from = Event_types.event_from_of_rpc from in
+      let trans = Xmlrpc.to_string from |> Xmlrpc.of_string in
+      Unixext.write_string_to_file "/tmp/from.rpc" (Rpc.to_string from);
+      Unixext.write_string_to_file "/tmp/from.trans.rpc" (Rpc.to_string from);
+      let from = Event_types.event_from_of_rpc trans in
       process from.Event_types.token
     end else
       ()
