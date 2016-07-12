@@ -54,7 +54,7 @@ module V6process = functor(V: V6api) -> struct
 						  debug "Error in apply_edition rpc" ;
 						  raise (V6errors.Error ("unmarshalling_error", [])) in
 				let arg = apply_edition_in_of_rpc arg_rpc in
-				let dbg = Rpc.string_of_rpc dbg_rpc in
+				let dbg = Rpc.ExnProducing.string_of_rpc dbg_rpc in
 				let edition, features, additional_params =
 					V.apply_edition dbg arg.edition_in arg.additional_in in
 				let response = rpc_of_apply_edition_out
@@ -66,7 +66,7 @@ module V6process = functor(V: V6api) -> struct
 					| _ ->
 						  debug "Error in get_editions rpc" ;
 						  raise (V6errors.Error ("unmarshalling_error", [])) in
-				let dbg = Rpc.string_of_rpc dbg_rpc in
+				let dbg = Rpc.ExnProducing.string_of_rpc dbg_rpc in
 				let response = rpc_of_get_editions_out {editions = V.get_editions dbg} in
 				Rpc.success response
 			| "get_version" ->
@@ -75,7 +75,7 @@ module V6process = functor(V: V6api) -> struct
 					| _ ->
 						  debug "Error in get_version rpc" ;
 						  raise (V6errors.Error ("unmarshalling_error", [])) in
-				let dbg = Rpc.string_of_rpc dbg_rpc in
+				let dbg = Rpc.ExnProducing.string_of_rpc dbg_rpc in
 				let response = Rpc.rpc_of_string (V.get_version dbg) in
 				Rpc.success response
 			| "reopen-logs" ->

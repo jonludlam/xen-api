@@ -92,7 +92,7 @@ let keys_of_features =
 	]
 
 let name_of_feature f =
-	rpc_of_feature f |> Rpc.string_of_rpc
+	rpc_of_feature f |> Rpc.ExnProducing.string_of_rpc
 
 let string_of_feature f =
 	let str, o, _ = List.assoc f keys_of_features in

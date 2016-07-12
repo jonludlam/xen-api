@@ -24,7 +24,7 @@ type event = {
 	ty: string;
 	op: op;
 	reference: string;
-	snapshot: Rpc.t option;
+	snapshot: Rpc.ExnProducing.t option;
 } with rpc
 
 let ev_struct_remap = [

@@ -107,6 +107,7 @@ let gen_client highapi =
 			 [ 
 				 "open API";
 				 "open Rpc";
+				 "open Rpc.ExnProducing";
 				 "module type RPC = sig val rpc: Rpc.t -> Rpc.t end";
 				 "module type IO = sig type 'a t val bind : 'a t -> ('a -> 'b t) -> 'b t val return : 'a -> 'a t end";
 				 "";
@@ -137,7 +138,8 @@ let gen_client_types highapi =
 				"let response_of_fault code =";
 				"  Rpc.failure (rpc_of_failure ([\"Fault\"; code]))";
 			]; [
-				"include Rpc";
+				"open Rpc";
+				"open Rpc.ExnProducing";
 				"type string_list = string list with rpc";
 			]; [ 
 				"module Ref = struct";
@@ -170,7 +172,7 @@ let gen_client_types highapi =
 let gen_server highapi =
 	List.iter (List.iter print)
 		(List.between [""] [
-			[ "open API"; "open Server_helpers" ];
+			[ "open Rpc"; "open Rpc.ExnProducing"; "open API"; "open Server_helpers" ];
 			O.Module.strings_of (Gen_server.gen_module highapi);
 		])
 

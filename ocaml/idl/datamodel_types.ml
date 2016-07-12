@@ -29,7 +29,7 @@ open Stdext
 
 module Date = struct
 	include Date
-	let iso8601_of_rpc rpc = Date.of_string (Rpc.string_of_rpc rpc)
+	let iso8601_of_rpc rpc = Date.of_string (Rpc.ExnProducing.string_of_rpc rpc)
 	let rpc_of_iso8601 date = Rpc.rpc_of_string (Date.to_string date)
 end
 

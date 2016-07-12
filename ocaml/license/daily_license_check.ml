@@ -38,18 +38,18 @@ let get_info_from_db rpc session =
 	pool, pool_license_state, all_license_params
 
 let execute rpc session pool result =
-	let send_alert session pool msg body =
-		let (name, priority) = msg in
-		let pool_uuid = XenAPI.Pool.get_uuid rpc session pool in
-		ignore (XenAPI.Message.create rpc session name priority `Pool pool_uuid body)
-	in
-	match result with
-	| Good -> ()
-	| Expiring hosts ->
-		let body = Printf.sprintf "The licenses of the following hosts are about to expire: %s"
-			(String.concat ", " hosts) in
-		send_alert session pool Api_messages.license_expires_soon body
-	| Expired hosts ->
-		let body = Printf.sprintf "The licenses of the following hosts have expired: %s"
-			(String.concat ", " hosts) in
-		send_alert session pool Api_messages.license_expired body
+  let send_alert session pool msg body =
+    let (name, priority) = msg in
+    let pool_uuid = XenAPI.Pool.get_uuid rpc session pool in
+    ignore (XenAPI.Message.create rpc session name priority `Pool pool_uuid body)
+  in
+  match result with
+  | Good -> ()
+  | Expiring hosts ->
+    let body = Printf.sprintf "The licenses of the following hosts are about to expire: %s"
+	(String.concat ", " hosts) in
+    send_alert session pool Api_messages.license_expires_soon body
+  | Expired hosts ->
+    let body = Printf.sprintf "The licenses of the following hosts have expired: %s"
+	(String.concat ", " hosts) in
+    send_alert session pool Api_messages.license_expired body

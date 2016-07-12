@@ -92,7 +92,7 @@ let get_version dbg =
 		let response = v6rpc call in
 		debug "response: %s" (Rpc.to_string response.Rpc.contents);
 		if response.Rpc.success then
-			Rpc.string_of_rpc response.Rpc.contents
+			Rpc.ExnProducing.string_of_rpc response.Rpc.contents
 		else
 			raise V6DaemonFailure
 	with _ ->
