@@ -1,0 +1,101 @@
+OASISFormat:  0.4
+Name:         xapi
+Version:      0.0.0
+Synopsis:     Description here
+Authors:      Xapi Project
+License:      LGPL-2.1 with OCaml linking exception
+Plugins:      DevFiles(0.4), META (0.4)
+BuildTools:   ocamlbuild
+
+Library ocaml_backend
+  Path:             ocaml/idl/ocaml_backend
+  Install:          false
+  InternalModules:  Ref
+  BuildDepends:     sexpr,
+                    uuid
+
+Library database
+  Path:             ocaml/database
+  Install:          false
+  InternalModules:  Escaping,
+                    Schema
+  BuildDepends:     globs,
+                    rpclib.syntax,
+                    sexplib.syntax,
+                    sexpr,
+                    threads,
+                    xcp,
+                    stunnel,
+                    http-svr 
+
+Library datamodel
+  Path:             ocaml/idl
+  Install:          false
+  InternalModules:  Datamodel,
+                    Api_errors
+  BuildDepends:     ocaml_backend,
+                    database,
+                    rpclib.syntax,
+                    stdext,
+                    threads,
+                    xml-light2,
+                    http-svr
+
+Executable gen_api_main
+  Path:             ocaml/idl/ocaml_backend
+  Install:          false
+  MainIs:           gen_api_main.ml
+  CompiledObject:   best
+  ByteOpt:          -warn-error +1..45
+  NativeOpt:        -warn-error +1..45
+  BuildDepends:     datamodel,
+                    stdext,
+                    threads
+
+Library autogen
+  Path:             ocaml/autogen
+  Install:          false
+  InternalModules:  Client,
+                    Db_actions
+  BuildDepends:     database,
+                    datamodel,
+                    http-svr,
+                    rpclib.syntax,
+                    stdext,
+                    threads
+
+Library api
+  Path:             ocaml/autogen
+  Install:          false
+  FindlibParent:    autogen
+  InternalModules:  API
+
+Library util
+  Path:             ocaml/util
+  Install:          false
+  InternalModules:  Version
+  BuildDepends:     threads,
+                    xcp-inventory
+
+Library globs
+  Path:             ocaml/xapi
+  Install:          false
+  InternalModules:  Xapi_globs
+  BuildDepends:     autogen.api
+                    
+
+
+Executable xapi
+  Path:             ocaml/xapi
+  Install:          false
+  MainIs:           xapi.ml
+  CompiledObject:   best
+  ByteOpt:          -warn-error +1..45
+  NativeOpt:        -warn-error +1..45
+  BuildDepends:     autogen,
+                    datamodel,
+                    ocaml_backend,
+                    util,
+                    stdext,
+                    threads,
+                    xcp

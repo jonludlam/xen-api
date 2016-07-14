@@ -1,0 +1,21 @@
+# OASIS_START
+# DO NOT EDIT (digest: 52396c63fa3bb2c36e3702bd12aa6075)
+version = "0.0.0"
+description = "Description here"
+requires = "database datamodel http-svr rpclib.syntax stdext threads"
+archive(byte) = "autogen.cma"
+archive(byte, plugin) = "autogen.cma"
+archive(native) = "autogen.cmxa"
+archive(native, plugin) = "autogen.cmxs"
+exists_if = "autogen.cma"
+package "api" (
+ version = "0.0.0"
+ description = "Description here"
+ archive(byte) = "api.cma"
+ archive(byte, plugin) = "api.cma"
+ archive(native) = "api.cmxa"
+ archive(native, plugin) = "api.cmxs"
+ exists_if = "api.cma"
+)
+# OASIS_STOP
+
