@@ -765,6 +765,7 @@ let make_param_funs getall getallrecs getbyuuid record class_name def_filters de
 
 
 let gen_cmds rpc session_id =
+<<<<<<< HEAD
   let mk = make_param_funs in
   List.concat
     [ Client.Pool.(mk get_all get_all_records_where get_by_uuid pool_record "pool" [] ["uuid";"name-label";"name-description";"master";"default-SR"] rpc session_id)
@@ -782,6 +783,7 @@ let gen_cmds rpc session_id =
     ; Client.Host_cpu.(mk get_all get_all_records_where get_by_uuid host_cpu_record "host-cpu" [] ["uuid";"number";"vendor";"speed";"utilisation"] rpc session_id)
     ; Client.Host_crashdump.(mk get_all get_all_records_where get_by_uuid host_crashdump_record "host-crashdump" [] ["uuid";"host";"timestamp";"size"] rpc session_id)
     ; Client.Pool_patch.(mk get_all get_all_records_where get_by_uuid pool_patch_record "patch" [] ["uuid"; "name-label"; "name-description"; "size"; "hosts"; "after-apply-guidance"] rpc session_id)
+    ; Client.Pool_update.(mk get_all get_all_records_where get_by_uuid pool_update_record "update" [] ["uuid"; "name-label"; "name-description"; "installation_size"; "hosts"; "after-apply-guidance"] rpc session_id)
     ; Client.VDI.(mk get_all get_all_records_where get_by_uuid vdi_record "vdi" [] ["uuid";"name-label";"name-description";"virtual-size";"read-only";"sharable";"sr-uuid"] rpc session_id)
     ; Client.VBD.(mk get_all get_all_records_where get_by_uuid vbd_record "vbd" [] ["uuid";"vm-uuid";"vm-name-label";"vdi-uuid";"device"; "empty"] rpc session_id)
     ; Client.SR.(mk get_all get_all_records_where get_by_uuid sr_record "sr" [] ["uuid";"name-label";"name-description";"host";"type";"content-type"] rpc session_id)
