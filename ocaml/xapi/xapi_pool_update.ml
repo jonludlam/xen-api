@@ -62,7 +62,15 @@ let umount ?(retry=true) dest =
     try
       ignore(Forkhelpers.execute_command_get_output "/bin/umount" [dest] );
       finished := true
-    with e ->
+    with
+    | Forkhelpers.Spawn_internal_error(stderr, stdout, status) as e ->
+      debug "Caught exception (%s) while unmounting %s: pausing before retrying"
+        (ExnHelper.string_of_exn e) dest;
+      begin match status with
+        | Unix.WEXITED (32) -> finished := true (*not mounted*)
+        | _ -> Thread.delay 5.
+      end
+    | e ->
       if not(retry) then raise e;
       debug "Caught exception (%s) while unmounting %s: pausing before retrying"
         (ExnHelper.string_of_exn e) dest;
@@ -189,42 +197,42 @@ let guidance_from_string = function
   | _ -> raise Bad_update_info
 
 let parse_update_info xml =
-      match xml with
-      | Xml.Element ("update", attr, children) ->
-        let key = List.assoc "key" attr in
-        let uuid = List.assoc "uuid" attr in
-        let name_label = List.assoc "name-label" attr in
+  match xml with
+  | Xml.Element ("update", attr, children) ->
+    let key = List.assoc "key" attr in
+    let uuid = List.assoc "uuid" attr in
+    let name_label = List.assoc "name-label" attr in
     let installation_size =
       try
         Int64.of_string (List.assoc "installation-size" attr)
       with
       | _ -> 0L
     in
-        let guidance = 
-          try
-            match List.assoc "after-apply-guidance" attr with
-            | "" -> []
-            | s ->  List.map guidance_from_string (String.split ' ' s)
-          with
-          | _ -> []
-        in
-        let is_name_description_node = function
-          | Xml.Element ("name-description", _, _) -> true
-          | _ -> false
-        in
-        let name_description = match List.find is_name_description_node children with
-          | Xml.Element("name-description", _, [ Xml.PCData s ]) -> s
+    let guidance = 
+      try
+        match List.assoc "after-apply-guidance" attr with
+        | "" -> []
+        | s ->  List.map guidance_from_string (String.split ' ' s)
+      with
+      | _ -> []
+    in
+    let is_name_description_node = function
+      | Xml.Element ("name-description", _, _) -> true
+      | _ -> false
+    in
+    let name_description = match List.find is_name_description_node children with
+      | Xml.Element("name-description", _, [ Xml.PCData s ]) -> s
       | _ -> raise (Missing_update_key "<name-description>")
-        in
-        let update_info = {
-          uuid = uuid;
-          name_label = name_label;
-          name_description = name_description;
-          key = key;
-          installation_size = installation_size;
-          after_apply_guidance = guidance;
-        } in
-        update_info
+    in
+    let update_info = {
+      uuid = uuid;
+      name_label = name_label;
+      name_description = name_description;
+      key = key;
+      installation_size = installation_size;
+      after_apply_guidance = guidance;
+    } in
+    update_info
   | _ -> raise (Missing_update_key "<update>")
 
 let extract_applied_update_info applied_uuid  =
@@ -304,9 +312,9 @@ let introduce ~__context ~vdi =
     end;
     update
   with _ ->
-  let update = Ref.make () in
-  create_update_record ~__context ~update ~update_info ~vdi;
-  update
+    let update = Ref.make () in
+    create_update_record ~__context ~update ~update_info ~vdi;
+    update
 
 let pool_apply ~__context ~self =
   let pool_update_name = Db.Pool_update.get_name_label ~__context ~self in
