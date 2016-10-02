@@ -310,6 +310,7 @@ let create_update_record ~__context ~update ~update_info ~vdi =
            ~size:update_info.installation_size
            ~pool_applied:false
            ~after_apply_guidance:update_info.after_apply_guidance
+           ~pool_update:update
            ~other_config:[]);
   Db.Pool_update.create ~__context
     ~ref:update
