@@ -259,19 +259,32 @@ let pool_patch_of_update ~__context update_ref =
 let pool_patch_upload_handler (req: Request.t) s _ =
   debug "Patch Upload Handler - Entered...";
 
-  Xapi_http.with_context "Uploading host patch" req s
+  Xapi_http.with_context "Uploading update" req s
     (fun __context ->
       Helpers.call_api_functions ~__context (fun rpc session_id ->
-        let vdi_opt = Import_raw_vdi.localhost_handler rpc session_id (Importexport.vdi_of_req ~__context req) req s in
-        match vdi_opt with
-        | Some vdi ->
-          let update = Client.Client.Pool_update.introduce rpc session_id vdi in
-          let patch = pool_patch_of_update ~__context update in
-          TaskHelper.complete ~__context (Some (API.rpc_of_ref_pool_patch patch))
-        | None ->
-          (* If we've got a None here, we'll already have replied with the error and failed the task,
-             so there's nothing to do here. *)
-          ()
+        (* Strip out the task info here, we'll use a new subtask *)
+        let strip = List.filter (fun (k,v) -> k <> "task_id") in
+        let subtask = Client.Client.Task.create rpc session_id "VDI upload" "" in
+        Pervasiveext.finally (fun () ->
+          let req = Http.Request.{req with cookie = strip req.cookie; query = ("task_id",Ref.string_of subtask) :: strip req.query} in
+          let vdi_opt = Import_raw_vdi.localhost_handler rpc session_id (Importexport.vdi_of_req ~__context req) req s in
+          match vdi_opt with
+          | Some vdi ->
+            begin
+              try
+                let update = Client.Client.Pool_update.introduce rpc session_id vdi in
+                let patch = pool_patch_of_update ~__context update in
+                Db.Task.set_result ~__context ~self:(Context.get_task_id __context) ~value:(Ref.string_of patch);
+                TaskHelper.complete ~__context None
+              with e ->
+                TaskHelper.failed ~__context e
+            end
+          | None ->
+            let error_info = Db.Task.get_error_info ~__context ~self:subtask in
+            TaskHelper.failed ~__context Api_errors.(Server_error (List.hd error_info, List.tl error_info));
+            (* If we've got a None here, we'll already have replied with the error. Fail the task now too. *)
+            ())
+          (fun () -> Client.Client.Task.destroy rpc session_id subtask)
       )
     )
 
