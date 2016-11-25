@@ -668,7 +668,7 @@ let handler (req: Request.t) s _ =
                        Http_svr.headers s headers;
                        let go fd = export refresh_session __context rpc session_id fd vm_ref preserve_power_state in
                        if use_compression
-                       then Gzip.compress s go
+                       then failwith "disabled" (*Gzip.compress s go*)
                        else go s
                     )
 

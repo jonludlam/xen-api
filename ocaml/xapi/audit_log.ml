@@ -68,7 +68,7 @@ let transfer_audit_file _path compression fd_out ?filter since : unit =
           else if compression="gz"
           then (
             Unixext.with_file path [ Unix.O_RDONLY ] 0o0
-              (fun gz_fd_in ->
+              (fun gz_fd_in -> failwith "disabled" (*
                  Gzip.decompress_passive gz_fd_in
                    (fun fd_in -> (*fd_in is closed by gzip module*)
                       let cin = Unix.in_channel_of_descr fd_in in
@@ -78,7 +78,7 @@ let transfer_audit_file _path compression fd_out ?filter since : unit =
                           write_line (line^"\n") fd_out ?filter since
                         done
                       with End_of_file -> () (* ok, expected *)
-                   )
+                   ) *)
               )
           )
           else (

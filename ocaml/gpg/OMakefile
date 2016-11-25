@@ -1,6 +1,6 @@
 OCAMLINCLUDES += ../xapi ..
+OCAMLPACKS += forkexec
 
 .PHONY: clean
 clean:
 	rm -rf $(CLEAN_OBJS) *.aux *.log *.fig xapi
-

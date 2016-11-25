@@ -1419,8 +1419,9 @@ let with_open_archive fd ?length f =
     f xml fd
   with e ->
     if not(!retry_with_gzip) then raise e;
-    debug "Failed to directly open the archive; trying gzip";
-    let feeder pipe_in = finally
+    debug "Failed to directly open the archive; would ordinarly try gzip, but can't today";
+    failwith "disabled"
+(*    let feeder pipe_in = finally
         (fun () ->
            Gzip.decompress pipe_in
              (fun compressed_in ->
@@ -1447,7 +1448,7 @@ let with_open_archive fd ?length f =
            Thread.join feeder_t) in
     let pipe_out, pipe_in = Unix.pipe () in
     let feeder_t = Thread.create feeder pipe_in in
-    consumer pipe_out feeder_t
+      consumer pipe_out feeder_t*)
 
 (** Remove "import" from the current operations of all created VMs, complete the
     task including the VM references *)

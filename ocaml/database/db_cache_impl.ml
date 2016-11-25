@@ -30,10 +30,19 @@ module W = Debug.Make(struct let name = "db_write" end)
 open Db_cache_types
 open Db_ref
 
+open Lwt
+open Irmin_unix
+module Store = Irmin_git.FS(Irmin.Contents.String)(Irmin.Ref.String)(Irmin.Hash.SHA1)
+
+
 let fist_delay_read_records_where = ref false
 
 (* Only needed by the DB_ACCESS signature *)
-let initialise () = ()
+let initialise () =
+  let _ = Thread.create (fun () ->
+      Lwt_main.run (Lwt_unix.sleep 1.0e20)
+  ) () in
+  ()
 
 (* This fn is part of external interface, so need to take lock *)
 let get_table_from_ref t objref =
@@ -396,7 +405,3 @@ let stats t =
       (name, size) :: acc)
     (Database.tableset (get_database t))
     []
-
-
-
-

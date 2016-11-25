@@ -301,8 +301,9 @@ let recv_all refresh_session ifd (__context:Context.t) rpc session_id vsn force 
 
 (** Receive a set of VDIs split into chunks in a tar format created out of a Zurich/Geneva
     exported VM. Each chunk has been independently compressed.*)
-let recv_all_zurich refresh_session ifd (__context:Context.t) rpc session_id prefix_vdis =
-  TaskHelper.set_cancellable ~__context;
+let recv_all_zurich refresh_session ifd (__context:Context.t) rpc session_id prefix_vdis : unit =
+  failwith "disabled"
+  (*  TaskHelper.set_cancellable ~__context;
   TaskHelper.set_description ~__context "Importing Virtual Machine";
 
   let progress = new_progress_record __context prefix_vdis in
@@ -354,3 +355,4 @@ let recv_all_zurich refresh_session ifd (__context:Context.t) rpc session_id pre
     error "Failed to import XVA; some chunks were not processed.";
     raise (Failure "Some XVA data not processed")
   end
+  *)

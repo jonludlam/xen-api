@@ -83,6 +83,9 @@ module To = struct
     database (Xmlm.make_output (`Channel oc)) db;
     flush oc
 
+  let gzip oc db =
+    database (Xmlm.make_output (`Fun (fun d -> Gzip.output_byte oc d))) db
+
   let file (filename: string) db : unit =
     let fdescr = Unix.openfile filename [ Unix.O_WRONLY; Unix.O_CREAT; Unix.O_TRUNC ] 0o600 in
     Stdext.Pervasiveext.finally
@@ -186,5 +189,7 @@ module From = struct
   let channel schema inchan =
     database schema (Xmlm.make_input (`Channel inchan))
 
-end
+  let gzip_channel schema inchan =
+    database schema (Xmlm.make_input (`Fun (fun () -> Gzip.input_byte inchan)))
 
+end

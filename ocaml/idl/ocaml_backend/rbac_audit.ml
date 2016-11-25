@@ -213,7 +213,8 @@ let action_params_zip =
   ]
 
 let zip data = (* todo: remove i/o, make this more efficient *)
-  try
+  failwith "disabled"
+  (*  try
     let tmp_path = Filename.temp_file "zip-" ".dat" in
     let zdata = ref "" in
     Stdext.Pervasiveext.finally
@@ -243,6 +244,7 @@ let zip data = (* todo: remove i/o, make this more efficient *)
   with e->
     D.debug "error %s zipping data: %s" (ExnHelper.string_of_exn e) data;
     ""
+  *)
 
 (* manual ref getters *)
 let get_subject_other_config_subject_name __context self =

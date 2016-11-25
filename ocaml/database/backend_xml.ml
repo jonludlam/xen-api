@@ -23,19 +23,16 @@ let unmarshall schema dbconn =
   if not dbconn.Parse_db_conf.compress
   then Db_xml.From.file schema filename
   else
-    let compressed = Unix.openfile filename [ Unix.O_RDONLY ] 0o0 in
+    let compressed = Gzip.open_in filename in
     Stdext.Pervasiveext.finally
       (fun () ->
          let result = ref None in
-         Gzip.decompress_passive compressed
-           (fun uncompressed ->
-              result := Some (Db_xml.From.channel schema (Unix.in_channel_of_descr uncompressed))
-           );
+         result := Some (Db_xml.From.gzip_channel schema compressed);
          match !result with
          | None -> failwith "unmarshal failure"
          | Some x -> x
       )
-      (fun () -> Unix.close compressed)
+      (fun () -> Gzip.close_in compressed)
 
 (* Given table name, read all rows from db and store in cache *)
 let populate schema dbconn =
@@ -59,8 +56,8 @@ let flush dbconn db =
          if not dbconn.Parse_db_conf.compress
          then Db_xml.To.fd fd db
          else
-           Gzip.compress fd
-             (fun uncompressed -> Db_xml.To.fd uncompressed db)
+           let oc = Gzip.open_out_chan (Unix.out_channel_of_descr fd) in
+           Db_xml.To.gzip oc db
       ) in
 
   let do_flush_gen db filename =
@@ -85,6 +82,3 @@ let flush_dirty dbconn =
     dbconn.Parse_db_conf.last_generation_count <- g;
     true
   end else false
-
-
-

@@ -2,7 +2,7 @@
 XEN_CFLAGS    = -I$(XEN_ROOT)/usr/include
 OCAMLINCLUDES = $(ROOT)/ocaml/idl +ocamldoc
 OCAML_LIBS    = $(ROOT)/ocaml/util/xapi_version $(ROOT)/ocaml/util/stats
-OCAMLPACKS    = stdext uuid gzip
+OCAMLPACKS    = stdext uuid xcp
 
 .SUBDIRS: \
 	ptoken \
