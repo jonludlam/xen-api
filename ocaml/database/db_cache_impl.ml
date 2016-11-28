@@ -43,10 +43,18 @@ let irmin_t = ref None
 let initialise () =
   let open Infix in
   let _ = Thread.create (fun () ->
-      Lwt_main.run (Lwt_unix.sleep 1.0e20)
-  ) () in
+      let rec inner () =
+        Lwt_unix.sleep 1.0 >>= fun () ->
+        debug "Tick";
+        Lwt_unix.sleep 1.0 >>= fun () ->
+        debug "Tock";
+        inner () in
+      Lwt_main.run (inner ())
+    ) () in
+  debug "Running preemptive run_in_main func";
   Lwt_preemptive.run_in_main
     (fun () ->
+       debug "Starting to init irmin";
        Store.Repo.create config >>= fun t ->
        debug "Initialized Irmin";
        irmin_t := Some t;
