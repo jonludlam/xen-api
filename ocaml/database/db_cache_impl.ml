@@ -107,7 +107,7 @@ let write_field_locked t xtask tblname objref fldname newval =
   let lwt () =
     let t = get_irmin_t () in
     Store.master task t >>= fun t ->
-    Store.update (t (Printf.sprintf "write_field %s (%s)" tblname objref)) [tblname; objref; fldname] (Schema.Value.marshal newval)
+    Store.update (t (Printf.sprintf "write_field %s (%s): Task=%s" tblname objref xtask)) [tblname; objref; fldname] (Schema.Value.marshal newval)
   in Lwt_preemptive.run_in_main lwt;
   Database.notify (WriteField(tblname, objref, fldname, current_val, newval)) (get_database t)
 
@@ -200,7 +200,7 @@ let delete_row_locked t xtask tblname objref =
     let lwt () =
       let t = get_irmin_t () in
       Store.master task t >>= fun t ->
-      Store.remove (t (Printf.sprintf "delete_row %s (%s)" tblname objref)) [tblname; objref]
+      Store.remove (t (Printf.sprintf "delete_row %s (%s): Task=%s" tblname objref xtask)) [tblname; objref]
     in Lwt_preemptive.run_in_main lwt;
     Database.notify (Delete(tblname, objref, Row.fold (fun k _ v acc -> (k, v) :: acc) row [])) (get_database t)
   with Not_found ->
@@ -235,7 +235,7 @@ let create_row_locked t xtask tblname kvs' new_objref =
     let t = get_irmin_t () in
     Store.master task t >>= fun t ->
     Lwt_list.iter_s (fun (k,v) ->
-        Store.update (t (Printf.sprintf "create_row %s (%s)" tblname new_objref)) [tblname; new_objref; k] v) kvs
+        Store.update (t (Printf.sprintf "create_row %s (%s) (%s): Task=%s" tblname new_objref k xtask)) [tblname; new_objref; k] v) kvs
   in Lwt_preemptive.run_in_main lwt;
   Database.notify (Create(tblname, new_objref, Row.fold (fun k _ v acc -> (k, v) :: acc) row [])) (get_database t)
 
