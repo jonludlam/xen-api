@@ -102,10 +102,13 @@ let ensure_utf8_xml string =
 
 (* Write field in cache *)
 let write_field_locked t tblname objref fldname newval =
-  let irmin_t = get_irmin_t () in
-  ignore(irmin_t);
   let current_val = get_field tblname objref fldname (get_database t) in
   update_database t (set_field tblname objref fldname newval);
+  let lwt () =
+    let t = get_irmin_t () in
+    Store.master task t >>= fun t ->
+    Store.update (t (Printf.sprintf "write_field %s (%s)" tblname objref)) [tblname; objref; fldname] (Schema.Value.marshal newval)
+  in Lwt_preemptive.run_in_main lwt;
   Database.notify (WriteField(tblname, objref, fldname, current_val, newval)) (get_database t)
 
 let write_field t tblname objref fldname newval =
@@ -194,6 +197,11 @@ let delete_row_locked t tblname objref =
     let db = get_database t in
     Database.notify (PreDelete(tblname, objref)) db;
     update_database t (remove_row tblname objref);
+    let lwt () =
+      let t = get_irmin_t () in
+      Store.master task t >>= fun t ->
+      Store.remove (t (Printf.sprintf "delete_row %s (%s)" tblname objref)) [tblname; objref]
+    in Lwt_preemptive.run_in_main lwt;
     Database.notify (Delete(tblname, objref, Row.fold (fun k _ v acc -> (k, v) :: acc) row [])) (get_database t)
   with Not_found ->
     raise (DBCache_NotFound ("missing row", tblname, objref))
@@ -203,8 +211,6 @@ let delete_row t tblname objref =
 
 (* Create new row in tbl containing specified k-v pairs *)
 let create_row_locked t tblname kvs' new_objref =
-  let irmin_t = get_irmin_t () in
-  ignore(irmin_t);
   let db = get_database t in
   let schema = Schema.table tblname (Database.schema db) in
 
@@ -223,7 +229,14 @@ let create_row_locked t tblname kvs' new_objref =
   (* fill in default values if kv pairs for these are not supplied already *)
   let row = Row.add_defaults g schema row in
   W.debug "create_row %s (%s) [%s]" tblname new_objref (String.concat "," (List.map (fun (k,v)->"("^k^","^"v"^")") kvs'));
+  let kvs = Row.fold (fun k _ v acc -> (k,Schema.Value.marshal v)::acc) row [] in
   update_database t (add_row tblname new_objref row);
+  let lwt () =
+    let t = get_irmin_t () in
+    Store.master task t >>= fun t ->
+    Lwt_list.iter_s (fun (k,v) ->
+        Store.update (t (Printf.sprintf "create_row %s (%s)" tblname new_objref)) [tblname; new_objref; k] v) kvs
+  in Lwt_preemptive.run_in_main lwt;
   Database.notify (Create(tblname, new_objref, Row.fold (fun k _ v acc -> (k, v) :: acc) row [])) (get_database t)
 
 let create_row t tblname kvs' new_objref =
