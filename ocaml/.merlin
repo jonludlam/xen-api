@@ -1,5 +1,5 @@
 PKG oUnit
-PKG stdext cdrom forkexec xcp xapi-libs-transitional http-svr netdev threads uuid sha1 oPasswd
+PKG stdext cdrom forkexec xcp xapi-libs-transitional http-svr netdev threads uuid sha1 oPasswd lwt irmin.unix irmin lwt.preemptive
 B +threads
 S ./
 B ./

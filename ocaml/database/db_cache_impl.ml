@@ -36,12 +36,21 @@ module Store = Irmin_git.FS(Irmin.Contents.String)(Irmin.Ref.String)(Irmin.Hash.
 
 
 let fist_delay_read_records_where = ref false
+let config = Irmin_git.config ~root:"/tmp/irmin/test" ~bare:true ()
+let irmin_t = ref None
 
 (* Only needed by the DB_ACCESS signature *)
 let initialise () =
+  let open Infix in
   let _ = Thread.create (fun () ->
       Lwt_main.run (Lwt_unix.sleep 1.0e20)
   ) () in
+  Lwt_preemptive.run_in_main
+    (fun () ->
+       Store.Repo.create config >>= fun t ->
+       debug "Initialized Irmin";
+       irmin_t := Some t;
+       return ());
   ()
 
 (* This fn is part of external interface, so need to take lock *)
