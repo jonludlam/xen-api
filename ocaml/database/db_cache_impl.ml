@@ -36,7 +36,7 @@ module Store = Irmin_git.FS(Irmin.Contents.String)(Irmin.Ref.String)(Irmin.Hash.
 
 
 let fist_delay_read_records_where = ref false
-let config = Irmin_git.config ~root:"/tmp/irmin/test" ~bare:true ()
+let config = Irmin_git.config ~root:"/var/lib/xcp/irmin" ~bare:true ()
 let irmin_t = ref None
 
 (* Only needed by the DB_ACCESS signature *)
@@ -52,6 +52,11 @@ let initialise () =
        irmin_t := Some t;
        return ());
   ()
+
+let rec get_irmin_t () =
+  match !irmin_t with
+  | Some t -> t
+  | None -> initialise (); get_irmin_t ()
 
 (* This fn is part of external interface, so need to take lock *)
 let get_table_from_ref t objref =
@@ -89,6 +94,8 @@ let ensure_utf8_xml string =
 
 (* Write field in cache *)
 let write_field_locked t tblname objref fldname newval =
+  let irmin_t = get_irmin_t () in
+  ignore(irmin_t);
   let current_val = get_field tblname objref fldname (get_database t) in
   update_database t (set_field tblname objref fldname newval);
   Database.notify (WriteField(tblname, objref, fldname, current_val, newval)) (get_database t)
@@ -188,6 +195,8 @@ let delete_row t tblname objref =
 
 (* Create new row in tbl containing specified k-v pairs *)
 let create_row_locked t tblname kvs' new_objref =
+  let irmin_t = get_irmin_t () in
+  ignore(irmin_t);
   let db = get_database t in
   let schema = Schema.table tblname (Database.schema db) in
 
@@ -263,6 +272,8 @@ let read_records_where t tbl expr =
 
 let process_structured_field_locked t (key,value) tblname fld objref proc_fn_selector =
   (* Ensure that both keys and values are valid for UTF-8-encoded XML. *)
+  let irmin_t = get_irmin_t () in
+  ignore(irmin_t);
   let key = ensure_utf8_xml key in
   let value = ensure_utf8_xml value in
   try
@@ -400,6 +411,7 @@ let spawn_db_flush_threads() =
 
 (* Called by server at start-of-day to initialiase cache. Populates cache and starts flushing threads *)
 let make t connections default_schema =
+  initialise ();
   let db = load connections default_schema in
   let db = Database.reindex db in
   update_database t (fun _ -> db);
