@@ -41,11 +41,11 @@ let process_rpc (req: Rpc.t) =
        | Request.Read_set_ref w ->
          Response.Read_set_ref (DB.read_set_ref t w)
        | Request.Create_row (a, b, c) ->
-         Response.Create_row (DB.create_row t a b c)
+         Response.Create_row (DB.create_row t "" a b c)
        | Request.Delete_row (a, b) ->
-         Response.Delete_row (DB.delete_row t a b)
+         Response.Delete_row (DB.delete_row t "" a b)
        | Request.Write_field (a, b, c, d) ->
-         Response.Write_field (DB.write_field t a b c d)
+         Response.Write_field (DB.write_field t "" a b c d)
        | Request.Read_field (a, b, c) ->
          Response.Read_field (DB.read_field t a b c)
        | Request.Read_record (a, b) ->
@@ -54,7 +54,7 @@ let process_rpc (req: Rpc.t) =
        | Request.Read_records_where (a, b) ->
          Response.Read_records_where (DB.read_records_where t a b)
        | Request.Process_structured_field (a, b, c, d, e) ->
-         Response.Process_structured_field (DB.process_structured_field t a b c d e)
+         Response.Process_structured_field (DB.process_structured_field t "" a b c d e)
      with
      | DBCache_NotFound (x,y,z) ->
        Response.Dbcache_notfound (x, y, z)
@@ -77,4 +77,3 @@ let handler req bio _ =
   (* XXX: need to cope with > 16MiB responses *)
   let response = Jsonrpc.to_string reply_rpc in
   Http_svr.response_str req fd response
-

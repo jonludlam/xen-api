@@ -247,7 +247,7 @@ let copy_vm_fields ~__context ~metadata ~dst ~do_not_copy ~default_values =
          then List.assoc key default_values
          else value in
        if not (List.mem key do_not_copy)
-       then DB.write_field db Db_names.vm (Ref.string_of dst) key value)
+       then DB.write_field db "" Db_names.vm (Ref.string_of dst) key value)
     metadata
 
 let safe_destroy_vbd ~__context ~rpc ~session_id vbd =
@@ -498,4 +498,3 @@ let	create_vm_from_snapshot ~__context ~snapshot =
   with e ->
     error "create_vm_from_snapshot failed: %s" (Printexc.to_string e);
     raise (Api_errors.Server_error (Api_errors.vm_revert_failed, [Ref.string_of snapshot; Ref.string_of old_vm]))
-

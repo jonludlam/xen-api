@@ -111,21 +111,21 @@ module Make = functor(RPC: Db_interface.RPC) -> struct
       x
 
 
-  let create_row _ x y z =
+  let create_row _ _ x y z =
     do_remote_call
       marshall_create_row_args
       unmarshall_create_row_response
       "create_row"
       (x,y,z)
 
-  let delete_row _ x y =
+  let delete_row _ _ x y =
     do_remote_call
       marshall_delete_row_args
       unmarshall_delete_row_response
       "delete_row"
       (x,y)
 
-  let write_field _ a b c d =
+  let write_field _ _ a b c d =
     do_remote_call
       marshall_write_field_args
       unmarshall_write_field_response
@@ -160,7 +160,7 @@ module Make = functor(RPC: Db_interface.RPC) -> struct
       "read_records_where"
       (x,e)
 
-  let process_structured_field _ a b c d e =
+  let process_structured_field _ _ a b c d e =
     do_remote_call
       marshall_process_structured_field_args
       unmarshall_process_structured_field_response

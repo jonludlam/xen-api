@@ -301,7 +301,7 @@ let db_action api : O.Module.t =
 
     let body = match tag with
       | FromField(Setter, fld) ->
-        Printf.sprintf "DB.write_field __t \"%s\" %s \"%s\" value"
+        Printf.sprintf "DB.write_field __t (Context.get_task_id __context |> Ref.string_of) \"%s\" %s \"%s\" value"
           (Escaping.escape_obj obj.DT.name)
           Client._self
           (Escaping.escape_id fld.DT.full_name)
@@ -312,25 +312,25 @@ let db_action api : O.Module.t =
           (Escaping.escape_id full_name)
           Client._self
       | FromField(Add, { DT.ty = DT.Map(_, _); full_name = full_name }) ->
-        Printf.sprintf "DB.process_structured_field __t (%s,%s) \"%s\" \"%s\" %s AddMap"
+        Printf.sprintf "DB.process_structured_field __t (Context.get_task_id __context |> Ref.string_of) (%s,%s) \"%s\" \"%s\" %s AddMap"
           Client._key Client._value
           (Escaping.escape_obj obj.DT.name)
           (Escaping.escape_id full_name)
           Client._self
       | FromField(Add, { DT.ty = DT.Set(_); full_name = full_name }) ->
-        Printf.sprintf "DB.process_structured_field __t (%s,\"\") \"%s\" \"%s\" %s AddSet"
+        Printf.sprintf "DB.process_structured_field __t (Context.get_task_id __context |> Ref.string_of) (%s,\"\") \"%s\" \"%s\" %s AddSet"
           Client._value
           (Escaping.escape_obj obj.DT.name)
           (Escaping.escape_id full_name)
           Client._self
       | FromField(Remove, { DT.ty = DT.Map(_, _); full_name = full_name }) ->
-        Printf.sprintf "DB.process_structured_field __t (%s,\"\") \"%s\" \"%s\" %s RemoveMap"
+        Printf.sprintf "DB.process_structured_field __t (Context.get_task_id __context |> Ref.string_of) (%s,\"\") \"%s\" \"%s\" %s RemoveMap"
           Client._key
           (Escaping.escape_obj obj.DT.name)
           (Escaping.escape_id full_name)
           Client._self
       | FromField(Remove, { DT.ty = DT.Set(_); full_name = full_name }) ->
-        Printf.sprintf "DB.process_structured_field __t (%s,\"\") \"%s\" \"%s\" %s RemoveSet"
+        Printf.sprintf "DB.process_structured_field __t (Context.get_task_id __context |> Ref.string_of) (%s,\"\") \"%s\" \"%s\" %s RemoveSet"
           Client._value
           (Escaping.escape_obj obj.DT.name)
           (Escaping.escape_id full_name)
@@ -339,7 +339,7 @@ let db_action api : O.Module.t =
       | FromField((Add | Remove), _) -> failwith "Cannot generate db add/remove for non sets and maps"
 
       | FromObject(Delete) ->
-        (Printf.sprintf "DB.delete_row __t \"%s\" %s"
+        (Printf.sprintf "DB.delete_row __t (Context.get_task_id __context |> Ref.string_of) \"%s\" %s"
            (Escaping.escape_obj obj.DT.name) Client._self)
       | FromObject(Make) ->
         let fields = List.filter field_in_this_table (DU.fields_of_obj obj) in
@@ -349,7 +349,7 @@ let db_action api : O.Module.t =
             OU.ocaml_of_record_field fld.full_name) fields  in
         let kvs' = List.map (fun (sql, o) ->
             Printf.sprintf "(\"%s\", %s)" sql o) kvs in
-        Printf.sprintf "DB.create_row __t \"%s\" [ %s ] ref"
+        Printf.sprintf "DB.create_row __t (Context.get_task_id __context |> Ref.string_of) \"%s\" [ %s ] ref"
           (Escaping.escape_obj obj.DT.name)
           (String.concat "; " kvs')
       | FromObject(GetByUuid) ->
@@ -472,4 +472,3 @@ let db_defaults api : O.Signature.t =
   { O.Signature.name = _db_defaults;
     elements = List.map (fun x -> O.Signature.Module (obj x)) (Dm_api.objects_of_api api)
   }
-

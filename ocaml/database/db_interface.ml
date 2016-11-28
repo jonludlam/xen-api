@@ -70,14 +70,14 @@ module type DB_ACCESS = sig
   (** [create_row tbl kvpairs ref] create a new row in [tbl] with
       		key [ref] and contents [kvpairs] *)
   val create_row :
-    Db_ref.t -> string -> (string * string) list -> string -> unit
+    Db_ref.t -> string -> string -> (string * string) list -> string -> unit
 
   (** [delete_row context tbl ref] deletes row [ref] from table [tbl] *)
-  val delete_row : Db_ref.t -> string -> string -> unit
+  val delete_row : Db_ref.t -> string -> string -> string -> unit
 
   (** [write_field context tbl ref fld val] changes field [fld] to [val] in
       		row [ref] in table [tbl] *)
-  val write_field : Db_ref.t -> string -> string -> string -> string -> unit
+  val write_field : Db_ref.t -> string -> string -> string -> string -> string -> unit
 
   (** [read_field context tbl ref fld] returns the value of field [fld]
       		in row [ref] in table [tbl] *)
@@ -97,8 +97,6 @@ module type DB_ACCESS = sig
       		which may be one of AddSet RemoveSet AddMap RemoveMap with
       		arguments [kv] *)
   val process_structured_field :
-    Db_ref.t -> string * string ->
+    Db_ref.t -> string -> string * string ->
     string -> string -> string -> Db_cache_types.structured_op_t -> unit
 end
-
-

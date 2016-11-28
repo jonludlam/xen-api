@@ -101,7 +101,7 @@ let ensure_utf8_xml string =
 
 
 (* Write field in cache *)
-let write_field_locked t tblname objref fldname newval =
+let write_field_locked t xtask tblname objref fldname newval =
   let current_val = get_field tblname objref fldname (get_database t) in
   update_database t (set_field tblname objref fldname newval);
   let lwt () =
@@ -111,13 +111,13 @@ let write_field_locked t tblname objref fldname newval =
   in Lwt_preemptive.run_in_main lwt;
   Database.notify (WriteField(tblname, objref, fldname, current_val, newval)) (get_database t)
 
-let write_field t tblname objref fldname newval =
+let write_field t xtask tblname objref fldname newval =
   let db = get_database t in
   let schema = Schema.table tblname (Database.schema db) in
   let column = Schema.Table.find fldname schema in
   let newval = Schema.Value.unmarshal column.Schema.Column.ty newval in
   with_lock (fun () ->
-      write_field_locked t tblname objref fldname newval)
+      write_field_locked t xtask tblname objref fldname newval)
 
 let touch_row t tblname objref =
   update_database t (touch tblname objref);
@@ -187,7 +187,7 @@ let read_record_internal db tblname objref =
 let read_record t = read_record_internal (get_database t)
 
 (* Delete row from tbl *)
-let delete_row_locked t tblname objref =
+let delete_row_locked t xtask tblname objref =
   try
     W.debug "delete_row %s (%s)" tblname objref;
 
@@ -206,11 +206,11 @@ let delete_row_locked t tblname objref =
   with Not_found ->
     raise (DBCache_NotFound ("missing row", tblname, objref))
 
-let delete_row t tblname objref =
-  with_lock (fun () -> delete_row_locked t tblname objref)
+let delete_row t task tblname objref =
+  with_lock (fun () -> delete_row_locked t task tblname objref)
 
 (* Create new row in tbl containing specified k-v pairs *)
-let create_row_locked t tblname kvs' new_objref =
+let create_row_locked t xtask tblname kvs' new_objref =
   let db = get_database t in
   let schema = Schema.table tblname (Database.schema db) in
 
@@ -239,8 +239,8 @@ let create_row_locked t tblname kvs' new_objref =
   in Lwt_preemptive.run_in_main lwt;
   Database.notify (Create(tblname, new_objref, Row.fold (fun k _ v acc -> (k, v) :: acc) row [])) (get_database t)
 
-let create_row t tblname kvs' new_objref =
-  with_lock (fun () -> create_row_locked t tblname kvs' new_objref)
+let create_row t task tblname kvs' new_objref =
+  with_lock (fun () -> create_row_locked t task tblname kvs' new_objref)
 
 (* Do linear scan to find field values which match where clause *)
 let read_field_where t rcd =
@@ -291,7 +291,7 @@ let read_records_where t tbl expr =
   if !fist_delay_read_records_where then Thread.delay 0.5;
   List.map (fun ref->ref, read_record_internal db tbl ref) reqd_refs
 
-let process_structured_field_locked t (key,value) tblname fld objref proc_fn_selector =
+let process_structured_field_locked t task (key,value) tblname fld objref proc_fn_selector =
   (* Ensure that both keys and values are valid for UTF-8-encoded XML. *)
   let irmin_t = get_irmin_t () in
   ignore(irmin_t);
@@ -313,13 +313,13 @@ let process_structured_field_locked t (key,value) tblname fld objref proc_fn_sel
             raise (Duplicate_key (tblname,fld,objref,key));
         end
       | RemoveMap -> remove_from_map key existing_str in
-    write_field_locked t tblname objref fld newval
+    write_field_locked t task tblname objref fld newval
   with Not_found ->
     raise (DBCache_NotFound ("missing row", tblname, objref))
 
-let process_structured_field t (key,value) tblname fld objref proc_fn_selector =
+let process_structured_field t task (key,value) tblname fld objref proc_fn_selector =
   with_lock (fun () ->
-      process_structured_field_locked t (key,value) tblname fld objref proc_fn_selector)
+      process_structured_field_locked t task (key,value) tblname fld objref proc_fn_selector)
 
 (* -------------------------------------------------------------------- *)
 
