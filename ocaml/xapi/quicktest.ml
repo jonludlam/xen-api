@@ -127,7 +127,7 @@ let event_from_parallel_test session_id =
            let _ = Client.Event.from !rpc session_id [] "" 10. in
            () (* good *)
          with e ->
-           debug test (ExnHelper.string_of_exn e);
+           debug test (Printexc.to_string e);
            ok := false;
       ) () in
   let (interfering_thread: Thread.t) = Thread.create
@@ -482,8 +482,8 @@ let compare_vms session_id test one two =
   (* check the power-state field *)
   if one_r.API.vM_power_state <> two_r.API.vM_power_state then begin
     failed test (Printf.sprintf "Original VM powerstate = %s; copy has %s"
-                   (Record_util.power_to_string one_r.API.vM_power_state)
-                   (Record_util.power_to_string two_r.API.vM_power_state));
+                   (API.rpc_of_vm_power_state one_r.API.vM_power_state |> Jsonrpc.to_string)
+                   (API.rpc_of_vm_power_state two_r.API.vM_power_state |> Jsonrpc.to_string));
     failwith "powercycle_test";
   end;
 

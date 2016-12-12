@@ -1,6 +1,6 @@
-OCAML_LIBS    = ../util/xapi_version ../idl/ocaml_backend/xapi_client
-OCAMLINCLUDES = ../idl/ocaml_backend ../idl ../autogen ../xapi ../gpg ../util
-OCAMLPACKS    = xml-light2 stdext stunnel http-svr xcp rpclib uuid systemd
+OCAML_LIBS    = ../util/xapi_version ../idl/xapi-consts ../xapi-types/common ../xapi-client/client 
+OCAMLINCLUDES = ../xapi-types ../xapi-client ../gpg ../util ../idl
+OCAMLPACKS    = xml-light2 stdext stunnel http-svr xcp rpclib uuid systemd 
 
 UseCamlp4(rpclib.syntax, v6rpc v6errors)
 

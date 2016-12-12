@@ -1,0 +1,9 @@
+CLIENT_OBJS = client event_helper tasks
+OCAMLINCLUDES += ../idl ../xapi ../xapi-types ../idl/ocaml_backend
+
+OCamlLibrary(client, $(CLIENT_OBJS))
+
+.PHONY: clean
+clean:
+	rm -rf $(CLEAN_OBJS) 
+

@@ -83,7 +83,7 @@ let _ =
        let open Xmlrpc_client in
        let http = connect
            ~session_id:(Ref.string_of session_id)
-           (Printf.sprintf "%s?ref=%s" Constants.console_uri (Ref.string_of vm)) in
+           (Printf.sprintf "/console?ref=%s"  (Ref.string_of vm)) in
        let transport = SSL(SSL.make ~use_fork_exec_helper:false (), address, 443) in
        with_transport transport
          (with_http http
@@ -93,4 +93,3 @@ let _ =
             )
          )
     ) (fun () -> Client.Session.logout rpc session_id)
-

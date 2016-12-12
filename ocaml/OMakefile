@@ -29,7 +29,10 @@ OCAMLPACKS    = stdext uuid gzip
 	perftest \
 	mpathalert \
 	doc \
-	test
+	test \
+	xapi-types \
+	xapi-client \
+	xen-api-client
 
 clean:
 	rm -f $(CLEAN_OBJS)

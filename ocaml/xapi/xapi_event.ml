@@ -492,7 +492,7 @@ let from_inner __context session subs from from_t deadline =
   let events = List.fold_left (fun acc (table, objref, mtime) ->
       let serialiser = Eventgen.find_get_record table in
       try
-        let xml = serialiser ~__context ~self:objref () in
+        let xml = serialiser ~self:objref () in
         let ev = event_of `_mod ?snapshot:xml (table, objref, mtime) in
         if Subscription.event_matches subs ev then ev::acc else acc
       with _ -> acc
@@ -500,7 +500,7 @@ let from_inner __context session subs from from_t deadline =
   let events = List.fold_left (fun acc (table, objref, ctime) ->
       let serialiser = Eventgen.find_get_record table in
       try
-        let xml = serialiser ~__context ~self:objref () in
+        let xml = serialiser ~self:objref () in
         let ev = event_of `add ?snapshot:xml (table, objref, ctime) in
         if Subscription.event_matches subs ev then ev::acc else acc
       with _ -> acc

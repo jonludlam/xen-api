@@ -1,5 +1,5 @@
 OCAMLPACKS += http-svr
-OCAMLINCLUDES += ../autogen ../idl ../idl/ocaml_backend ../database
+OCAMLINCLUDES += ../autogen ../idl ../idl/ocaml_backend ../database ../xapi-types ../xapi-client
 
 .PHONY: clean
 clean:

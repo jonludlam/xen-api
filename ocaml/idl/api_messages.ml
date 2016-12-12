@@ -83,8 +83,12 @@ let multipath_periodic_alert = addMessage "MULTIPATH_PERIODIC_ALERT" 3L
 
 (* Licensing alerts *)
 let license_does_not_support_pooling = addMessage "LICENSE_DOES_NOT_SUPPORT_POOLING" 2L (* Name conflict with Api_errors; unused in xen-api *)
+
+(* Nb: The following two _MUST BE KEPT IN SYNC_ with 'daily_license_check.ml' *)
 let license_expires_soon = addMessage "LICENSE_EXPIRES_SOON" 2L
 let license_expired = addMessage "LICENSE_EXPIRED" 2L
+(* Nb: The previous two _MUST BE KEPT IN SYNC_ with 'daily_license_check.ml' *)
+
 let v6_server_up = addMessage "LICENSE_SERVER_CONNECTED" 4L (* Used in XenCenter *)
 let v6_server_down = addMessage "LICENSE_SERVER_UNAVAILABLE" 3L (* Used in XenCenter *)
 let v6_grace_license = addMessage "GRACE_LICENSE" 3L

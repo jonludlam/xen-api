@@ -33,9 +33,9 @@ export DISABLE_WARN_ERROR
 
 .PHONY: all
 all: version
-	omake -j 8 phase1
-	omake -j 8 phase2
-	omake -j 8 phase3
+	omake phase1
+	omake phase2
+	omake phase3
 
 .PHONY: phase1 phase2 phase3
 phase1: version
