@@ -184,14 +184,6 @@ let get_record (obj: obj) aux_fn_name =
     ] in
   String.concat "\n" body
 
-(* Return a thunk which calls get_record on this class, for the event mechanism *)
-let snapshot obj_name self =
-  Printf.sprintf "(fun () -> API.%s.rpc_of_t (get_record ~__context ~self:%s))" (OU.ocaml_of_module_name obj_name) self
-
-(* Return a thunk which calls get_record on some other class, for the event mechanism *)
-let external_snapshot obj_name self =
-  Printf.sprintf "find_get_record \"%s\" ~__context ~self:%s" obj_name self
-
 let ocaml_of_tbl_fields xs =
   let of_field (tbl, fld, fn) =
     Printf.sprintf "\"%s\", %s, %s" tbl fld fn in
@@ -284,7 +276,7 @@ let db_action api : O.Module.t =
       ~ty:"unit"
       ~body:[
         Printf.sprintf "Hashtbl.add Eventgen.get_record_table \"%s\"" obj.DT.name;
-        Printf.sprintf "(fun ~__context ~self -> (fun () -> API.rpc_of_%s_t (%s.get_record ~__context ~self:(Ref.of_string self))))"
+        Printf.sprintf "(fun ~self -> (fun () -> let __context = Context.make \"eventgen\" in API.rpc_of_%s_t (%s.get_record ~__context ~self:(Ref.of_string self))))"
           (OU.ocaml_of_record_name obj.DT.name)
           (OU.ocaml_of_obj_name obj.DT.name)
       ]

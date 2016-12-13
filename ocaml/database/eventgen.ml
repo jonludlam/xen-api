@@ -16,11 +16,11 @@ open D
 
 type getrecord = unit -> Rpc.t
 
-let get_record_table : (string, __context:Context.t -> self:string -> getrecord ) Hashtbl.t = Hashtbl.create 20
+let get_record_table : (string, self:string -> getrecord ) Hashtbl.t = Hashtbl.create 20
 
-let find_get_record x ~__context ~self () : Rpc.t option =
+let find_get_record x ~self () : Rpc.t option =
   if Hashtbl.mem get_record_table x
-  then Some (Hashtbl.find get_record_table x ~__context ~self ())
+  then Some (Hashtbl.find get_record_table x ~self ())
   else None
 
 (* If a record is created or destroyed, then
@@ -73,8 +73,6 @@ open Db_cache_types
 open Db_action_helper
 
 let database_callback event db =
-  let context = Context.make "eventgen" in
-
   let other_tbl_refs tblname = follow_references tblname in
   let other_tbl_refs_for_this_field tblname fldname =
     List.filter (fun (_,fld) -> fld=fldname) (other_tbl_refs tblname) in
@@ -92,7 +90,7 @@ let database_callback event db =
   match event with
   | RefreshRow (tblname, objref) ->
     (* Generate event *)
-    let snapshot = find_get_record tblname ~__context:context ~self:objref in
+    let snapshot = find_get_record tblname ~self:objref in
     let record = snapshot() in
     begin match record with
       | None ->
@@ -107,18 +105,18 @@ let database_callback event db =
         let oldval = Schema.Value.Unsafe_cast.string oldval in
         events_of_other_tbl_refs
           (List.map (fun (tbl,fld) ->
-               (tbl, oldval, find_get_record tbl ~__context:context ~self:oldval)) (other_tbl_refs_for_this_field tblname fldname))
+               (tbl, oldval, find_get_record tbl ~self:oldval)) (other_tbl_refs_for_this_field tblname fldname))
       else [] in
     let events_new_val =
       if is_valid_ref newval then
         let newval = Schema.Value.Unsafe_cast.string newval in
         events_of_other_tbl_refs
           (List.map (fun (tbl,fld) ->
-               (tbl, newval, find_get_record tbl ~__context:context ~self:newval)) (other_tbl_refs_for_this_field tblname fldname))
+               (tbl, newval, find_get_record tbl ~self:newval)) (other_tbl_refs_for_this_field tblname fldname))
       else []
     in
     (* Generate event *)
-    let snapshot = find_get_record tblname ~__context:context ~self:objref in
+    let snapshot = find_get_record tblname ~self:objref in
     let record = snapshot() in
     List.iter (function
         | tbl, ref, None ->
@@ -142,7 +140,7 @@ let database_callback event db =
           events_notify ~snapshot:s tbl "mod" ref
       ) events_new_val;
   | PreDelete(tblname, objref) ->
-    begin match find_get_record tblname ~__context:context ~self:objref () with
+    begin match find_get_record tblname ~self:objref () with
       | None ->
         error "Failed to generate DEL event for %s %s" tblname objref;
         (*				Printf.printf "Failed to generate DEL event for %s %s\n%!" tblname objref; *)
@@ -156,7 +154,7 @@ let database_callback event db =
           let fld_value = List.assoc fld kv in
           if is_valid_ref fld_value then begin
             let fld_value = Schema.Value.Unsafe_cast.string fld_value in
-            (remote_tbl, fld_value, find_get_record remote_tbl ~__context:context ~self:fld_value) :: accu
+            (remote_tbl, fld_value, find_get_record remote_tbl ~self:fld_value) :: accu
           end else accu)
         [] other_tbl_refs in
     let other_tbl_ref_events = events_of_other_tbl_refs other_tbl_refs in
@@ -169,14 +167,14 @@ let database_callback event db =
       ) other_tbl_ref_events
 
   | Create (tblname, new_objref, kv) ->
-    let snapshot = find_get_record tblname ~__context:context ~self:new_objref in
+    let snapshot = find_get_record tblname ~self:new_objref in
     let other_tbl_refs = follow_references tblname in
     let other_tbl_refs =
       List.fold_left (fun accu (tbl,fld) ->
           let fld_value = List.assoc fld kv in
           if is_valid_ref fld_value then begin
             let fld_value = Schema.Value.Unsafe_cast.string fld_value in
-            (tbl, fld_value, find_get_record tbl ~__context:context ~self:fld_value) :: accu
+            (tbl, fld_value, find_get_record tbl ~self:fld_value) :: accu
           end else accu)
         [] other_tbl_refs in
     let other_tbl_events = events_of_other_tbl_refs other_tbl_refs in
