@@ -24,7 +24,7 @@ open Threadext
 open Pervasiveext
 open Fun
 module XenAPI = Client.Client
-module Rrdd = Rrd_client.Client
+module Rrdd = Rrd_rpc_client
 open Xenops_interface
 open Xapi_xenops_queue
 

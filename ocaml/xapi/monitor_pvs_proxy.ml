@@ -20,6 +20,7 @@ open Monitor_dbcalls_cache
 
 module D = Debug.Make(struct let name = "monitor_pvs_proxy" end)
 open D
+module Ds = Rrd_idl.DS
 
 module StringSet = Set.Make(struct type t = string let compare = compare end)
 let dont_log_error = ref StringSet.empty

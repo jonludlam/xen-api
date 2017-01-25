@@ -21,7 +21,7 @@ open Listext
 module D = Debug.Make(struct let name="xapi" end)
 open D
 
-module Rrdd = Rrd_client.Client
+module Rrdd = Rrd_rpc_client
 
 let assoc_opt key assocs = Opt.of_exception (fun () -> List.assoc key assocs)
 let bool_of_assoc key assocs = match assoc_opt key assocs with

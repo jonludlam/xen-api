@@ -14,6 +14,7 @@
 
 open Rrdd_plugin
 module D = Debug.Make(struct let name = "xapi_stats" end)
+module Ds = Rrd_idl.DS
 
 let generate_master_stats ~__context =
   let session_count =
@@ -153,7 +154,7 @@ let start () =
              ~uid:"xapi-stats"
              ~neg_shift:0.5
              ~target:(Reporter.Local shared_page_count)
-             ~protocol:Rrd_interface.V2
+             ~protocol:Rrd_idl.V2
              ~dss_f:(fun () -> generate_stats ~__context ~master)
          in
          reporter_cache := (Some reporter))

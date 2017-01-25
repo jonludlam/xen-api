@@ -17,7 +17,7 @@
 module D = Debug.Make(struct let name="xapi_fuse" end)
 open D
 
-module Rrdd = Rrd_client.Client
+module Rrdd = Rrd_rpc_client
 
 let time f =
   let start = Unix.gettimeofday () in

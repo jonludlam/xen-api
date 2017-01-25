@@ -13,15 +13,13 @@
  *)
 
 
-open Data_source
-
-let to_API_data_source (ds : t) = {
-  API.data_source_name_label = ds.name;
-  data_source_name_description = ds.description;
-  data_source_enabled = ds.enabled;
-  data_source_standard = ds.standard;
-  data_source_units = ds.units;
-  data_source_min = ds.min;
-  data_source_max = ds.max;
+let to_API_data_source (ds : Rrd_idl.t) = {
+  API.data_source_name_label = ds.Rrd_idl.name;
+  data_source_name_description = ds.Rrd_idl.description;
+  data_source_enabled = ds.Rrd_idl.enabled;
+  data_source_standard = ds.Rrd_idl.standard;
+  data_source_units = ds.Rrd_idl.units;
+  data_source_min = ds.Rrd_idl.min;
+  data_source_max = ds.Rrd_idl.max;
   data_source_value = 0.;
 }

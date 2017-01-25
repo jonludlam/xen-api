@@ -14,7 +14,7 @@
 (** Module that defines API functions for SR objects
  * @group XenAPI functions
 *)
-module Rrdd = Rrd_client.Client
+module Rrdd = Rrd_rpc_client
 
 open Printf
 open Stdext
@@ -301,7 +301,7 @@ let maybe_copy_sr_rrds ~__context ~sr =
       let archive_path = Rrdd.archive_sr_rrd ~sr_uuid in
       let contents = Unixext.string_of_file archive_path in
       Xapi_vdi_helpers.write_raw ~__context ~vdi ~text:contents
-    with Rrd_interface.Archive_failed(msg) ->
+    with Rrd_idl.Error(Rrd_idl.Archive_failed msg) ->
       warn "Archiving of SR RRDs to stats VDI failed: %s" msg
 
 (* Remove SR record from database without attempting to remove SR from disk.
@@ -673,7 +673,7 @@ let physical_utilisation_thread ~__context () =
           try
             let value = Rrdd.query_sr_ds ~sr_uuid ~ds_name:"physical_utilisation" |> Int64.of_float in
             Db.SR.set_physical_utilisation ~__context ~self:sr ~value
-          with Rrd_interface.Internal_error("Not_found") ->
+          with Rrd_idl.Error(_) ->
             debug "Cannot update physical utilisation for SR %s: RRD unavailable" sr_uuid
         ) (srs_to_update ())
     with e -> warn "Exception in SR physical utilisation scanning thread: %s" (Printexc.to_string e)

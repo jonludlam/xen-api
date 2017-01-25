@@ -12,7 +12,7 @@
  * GNU Lesser General Public License for more details.
  *)
 
-module Rrdd = Rrd_client.Client
+module Rrdd = Rrd_rpc_client
 
 open Stdext
 open Listext

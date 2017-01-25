@@ -15,7 +15,7 @@
  *  @group Main Loop and Start-up
 *)
 
-module Rrdd = Rrd_client.Client
+module Rrdd = Rrd_rpc_client
 
 open Stdext
 open Fun
