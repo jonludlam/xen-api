@@ -258,7 +258,9 @@ let do_db_xml_rpc_persistent_with_reopen ~host ~path (req: string) : Db_interfac
     
 let execute_remote_fn string path =
   let host = Pool_role.get_master_address () in
-  Db_lock.with_lock
-    (fun () ->
-       (* Ensure that this function is always called under mutual exclusion (provided by the recursive db lock) *)
-       do_db_xml_rpc_persistent_with_reopen ~host ~path string)
+  Stats.time_this "execute_remote_fn: Db_lock" (fun ()->
+    Db_lock.with_lock
+      (fun () ->
+         (* Ensure that this function is always called under mutual exclusion (provided by the recursive db lock) *)
+         Stats.time_this "execute_remote_fn: do_db_xml_rpc_persistent_with_reopen" (fun ()->
+             do_db_xml_rpc_persistent_with_reopen ~host ~path string)))
