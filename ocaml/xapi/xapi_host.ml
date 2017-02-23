@@ -1645,4 +1645,34 @@ let apply_guest_agent_config ~__context ~host =
 	Xapi_xenops.apply_guest_agent_config ~__context config
 
 let diagnostic_measure_db_speed ~__context ~host =
-  ""
+
+  (* Measure the time taken to set/unset this host's description *)
+  let measure fn =
+    let start = Unix.gettimeofday () in
+    let rec inner n =
+      if Unix.gettimeofday () > start +. 10.0 then n else begin
+        fn ();
+        inner (n+1)
+      end
+    in
+    inner 0
+  in
+
+  let desc_before = Db.Host.get_name_description ~__context ~self:host in
+
+  let desc_read = measure (fun () -> ignore(Db.Host.get_name_description ~__context ~self:host)) in
+  let desc_write = measure (fun () -> ignore(Db.Host.set_name_description ~__context ~self:host ~value:(Printf.sprintf "%d" (Random.int 1000)))) in
+
+  Db.Host.set_name_description ~__context ~self:host ~value:desc_before;
+  
+  let b = Buffer.create 100 in
+  Printf.bprintf b "TIMING STATS\n";
+  Printf.bprintf b "============\n";
+  Printf.bprintf b "Reads  : %f per second\n" (float_of_int desc_read /. 10.0);
+  Printf.bprintf b "Writes : %f per second\n" (float_of_int desc_write /. 10.0);
+
+  Buffer.to_bytes b
+  
+  
+
+   
