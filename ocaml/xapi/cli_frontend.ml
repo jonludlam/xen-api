@@ -2236,7 +2236,15 @@ add a mapping of 'path' -> '/tmp', the command line should contain the argument 
       help="Display per-host thread diagnostic information.";
       implementation=No_fd Cli_operations.host_get_thread_diagnostics;
       flags=[];
-    };	  
+    };
+    "host-diagnostic-measure-db-speed",
+    {
+      reqd=["uuid"];
+      optn=[];
+      help="Display measured database speed diagnostics.";
+      implementation=No_fd (Cli_operations.host_diagnostic_measure_db_speed);
+      flags=[];
+    };
    "host-sm-dp-destroy",
     {
       reqd=["uuid"; "dp"];
@@ -2964,12 +2972,3 @@ let geneva_help printer minimal cmd =
   
 let cmd_help printer minimal cmd =
 	rio_help printer minimal cmd
-
-
-
-
-
-
-
-
-
