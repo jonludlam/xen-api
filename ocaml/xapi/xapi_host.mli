@@ -297,3 +297,5 @@ val disable_display : __context:Context.t -> host:API.ref_host -> API.host_displ
 val sync_display : __context:Context.t -> host:API.ref_host -> unit
 
 val apply_guest_agent_config : __context:Context.t -> host:API.ref_host -> unit
+
+val diagnostic_measure_db_speed : __context:Context.t -> host:API.ref_host -> string

@@ -3021,6 +3021,16 @@ let host_get_diagnostic_timing_stats = call ~flags:[`Session]
   ~allowed_roles:_R_READ_ONLY
   ()
 
+let host_diagnostic_measure_db_speed = call ~flags:[`Session]
+	~in_product_since:rel_dundee
+	~name:"diagnostic_measure_db_speed"
+	~doc:"Measures the speed of the database"
+	~params:[Ref _host, "host", "The host to measure"]
+	~result:(String, "diagnostic information")
+	~hide_from_docs:true
+	~allowed_roles:_R_POOL_OP
+	()
+
 let host_create_new_blob = call
   ~name: "create_new_blob"
   ~in_product_since:rel_orlando
@@ -4624,6 +4634,7 @@ let host =
 		 host_disable_display;
 		 host_set_ssl_legacy;
 		 host_apply_guest_agent_config;
+		 host_diagnostic_measure_db_speed;
 		 ]
       ~contents:
         ([ uid _host;

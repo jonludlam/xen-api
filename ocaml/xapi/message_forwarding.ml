@@ -2548,6 +2548,13 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 			do_op_on ~local_fn ~__context ~host
 				(fun session_id rpc ->
 					Client.Host.apply_guest_agent_config rpc session_id host)
+
+		let diagnostic_measure_db_speed ~__context ~host =
+			info "Host.diagnostic_measure_db_speed: host='%s'" (host_uuid ~__context host);
+			let local_fn = Local.Host.diagnostic_measure_db_speed ~host in
+			do_op_on ~local_fn ~__context ~host
+  			(fun session_id rpc ->
+		  		Client.Host.diagnostic_measure_db_speed rpc session_id host)
 	end
 
 	module Host_crashdump = struct
