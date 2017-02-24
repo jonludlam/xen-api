@@ -118,22 +118,22 @@ let database_callback event db =
 				else [] 
 			in
 			(* Generate event *)
-			let snapshot = find_get_record tblname ~__context:context ~self:objref in
-			let record = snapshot() in
+   (*let snapshot = find_get_record tblname ~__context:context ~self:objref in
+     let record = snapshot() in*)
 			List.iter (function 
 				| tbl, ref, None ->
 					error "Failed to send MOD event for %s %s" tbl ref;
 					Printf.printf "Failed to send MOD event for %s %s\n%!" tbl ref;
 				| tbl, ref, Some s ->
-					events_notify ~snapshot:s tbl "mod" ref
+					events_notify tbl "mod" ref
 			) events_old_val;
-			begin match record with
+(*			begin match record with
 				| None ->
 					error "Failed to send MOD event for %s %s" tblname objref;
 					Printf.printf "Failed to send MOD event for %s %s\n%!" tblname objref;
-				| Some record ->
-					events_notify ~snapshot:record tblname "mod" objref;
-			end;
+  | Some record ->*)
+					events_notify tblname "mod" objref;
+   (*			end;*)
 			List.iter (function 
 				| tbl, ref, None ->
 					error "Failed to send MOD event for %s %s" tbl ref;
@@ -194,3 +194,4 @@ let database_callback event db =
 				| tbl, ref, Some s ->
 					events_notify ~snapshot:s tbl "mod" ref
 			) other_tbl_events
+

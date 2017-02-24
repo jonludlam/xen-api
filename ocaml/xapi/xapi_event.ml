@@ -576,8 +576,8 @@ let event_add ?snapshot ty op reference  =
 		let op = op_of_string op in
 
 		let ev = { id = Int64.to_string !Next.id; ts; ty = String.lowercase ty; op; reference; snapshot } in
-		From.add ev;
-		Next.add ev
+		From.add ev
+  (*		Next.add ev*)
 	end
 
 let register_hooks () = Db_action_helper.events_register event_add
