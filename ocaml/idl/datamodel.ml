@@ -4239,6 +4239,9 @@ let pool_update =
         field     ~in_oss_since:None ~qualifier:StaticRO ~ty:(Ref _vdi) "vdi" "VDI the update was uploaded to";
         field     ~in_product_since:rel_ely ~in_oss_since:None ~qualifier:DynamicRO ~ty:(Set (Ref _host)) "hosts" "The hosts that have applied this update.";
         field     ~in_product_since:rel_inverness ~in_oss_since:None ~qualifier:DynamicRO ~ty:(Set (Ref _host_update)) "host_updates" "Pool_update metadata specific to each host";
+        field     ~in_product_since:rel_inverness ~default_value:(Some (VSet [])) ~in_oss_since:None ~qualifier:StaticRO ~ty:(Set String) "livepatches" "Livepatches contained in this update";
+        field     ~in_product_since:rel_inverness ~default_value:(Some (VBool false)) ~in_oss_since:None ~qualifier:StaticRO ~ty:Bool "livepatch_complete" "Indicates the livepatches contain all fixes for this update";
+        field     ~in_product_since:rel_inverness ~default_value:(Some (VRef null_ref)) ~in_oss_since:None ~qualifier:StaticRO ~ty:(Ref _pool_update) "rollsup" "Points to the older update this update rolls up";
       ]
     ()
 

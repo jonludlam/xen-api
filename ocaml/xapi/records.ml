@@ -1127,6 +1127,9 @@ let pool_update_record rpc session_id update =
         make_field ~name:"installation-size"   ~get:(fun () -> Int64.to_string (x ()).API.pool_update_installation_size) ();
         make_field ~name:"hosts"               ~get:(fun () -> String.concat ", " (get_hosts ())) ~get_set:get_hosts ();
         make_field ~name:"after-apply-guidance" ~get:(fun () -> String.concat ", " (after_apply_guidance ())) ~get_set:after_apply_guidance ();
+        make_field ~name:"livepatches"         ~get:(fun () -> String.concat ", " (x ()).API.pool_update_livepatches) ~get_set:(fun () -> (x ()).API.pool_update_livepatches) ();
+        make_field ~name:"rollsup"             ~get:(fun () -> get_uuid_from_ref (x ()).API.pool_update_rollsup) ();
+        make_field ~name:"livepatch-complete"  ~get:(fun () -> string_of_bool (x ()).API.pool_update_livepatch_complete) ();
       ]}
 
 let host_cpu_record rpc session_id host_cpu =

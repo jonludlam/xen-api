@@ -371,6 +371,9 @@ let create_update_record ~__context ~update ~update_info ~vdi =
     ~key:update_info.key
     ~after_apply_guidance:update_info.after_apply_guidance
     ~vdi:vdi
+    ~livepatch_complete:false
+    ~rollsup:(Ref.null)
+    ~livepatches:[]
 
 let introduce ~__context ~vdi =
   ignore(Unixext.mkdir_safe Xapi_globs.host_update_dir 0o755);
