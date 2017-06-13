@@ -121,6 +121,7 @@ let _host = "host"
 let _host_metrics = "host_metrics"
 let _host_crashdump = "host_crashdump"
 let _host_patch = "host_patch"
+let _host_update = "host_update"
 let _hostcpu = "host_cpu"
 let _sr = "SR"
 let _sm = "SM"
@@ -4237,6 +4238,7 @@ let pool_update =
         field     ~in_product_since:rel_ely ~default_value:(Some (VSet [])) ~in_oss_since:None ~qualifier:StaticRO ~ty:(Set pool_update_after_apply_guidance) "after_apply_guidance" "What the client should do after this update has been applied.";
         field     ~in_oss_since:None ~qualifier:StaticRO ~ty:(Ref _vdi) "vdi" "VDI the update was uploaded to";
         field     ~in_product_since:rel_ely ~in_oss_since:None ~qualifier:DynamicRO ~ty:(Set (Ref _host)) "hosts" "The hosts that have applied this update.";
+        field     ~in_product_since:rel_inverness ~in_oss_since:None ~qualifier:DynamicRO ~ty:(Set (Ref _host_update)) "host_updates" "Pool_update metadata specific to each host";
       ]
     ()
 
@@ -4394,6 +4396,26 @@ let host_patch =
         field ~in_product_since:rel_miami ~default_value:(Some (VMap [])) ~in_oss_since:None  ~ty:(Map(String, String)) "other_config" "additional configuration";
       ]
     ()
+
+let host_update =
+  create_obj ~in_db:true ~in_product_since:rel_inverness ~in_oss_since:None ~persist:PersistEverything ~gen_constructor_destructor:false ~name:_host_update ~gen_events:true
+    ~descr:"Represents the state of an update on a host"
+    ~doccomments:[]
+    ~messages_default_allowed_roles:_R_POOL_OP
+    ~messages: []
+    ~contents:
+      [ uid _host_update;
+        field ~qualifier:StaticRO ~ty:(Ref _host) "host" "Host the patch relates to";
+        field ~qualifier:DynamicRO ~ty:(Set String) "live_applied" "True if all live parts of the update have been applied";
+        field ~qualifier:DynamicRO ~ty:(Set pool_update_after_apply_guidance) "actions_required" "Any action required to ensure the update is completely applied";
+        field ~qualifier:DynamicRO ~ty:DateTime "timestamp_applied" "Time the patch was applied";
+        field ~qualifier:DynamicRO ~ty:Bool "applied_at_boot" "True if the update was applied at system boot time";
+        field ~qualifier:DynamicRO ~ty:Bool "applied_at_toolstack_start" "True if the update was applied at the time that xapi started";
+        field ~qualifier:DynamicRO ~ty:Bool "partial" "True if the update is only partially active. Only applies to updates that contain a livepatch";
+        field ~qualifier:StaticRO ~ty:(Ref _pool_update) "pool_update" "The update applied";
+      ]
+    ()
+
 
 let host_bugreport_upload = call
     ~name:"bugreport_upload"
@@ -5053,6 +5075,7 @@ let host =
          field ~in_oss_since:None ~qualifier:DynamicRO ~ty:(Set (Ref _host_crashdump)) "crashdumps" "Set of host crash dumps";
          field ~in_oss_since:None ~internal_deprecated_since:rel_ely ~qualifier:DynamicRO ~ty:(Set (Ref _host_patch)) "patches" "Set of host patches";
          field ~in_oss_since:None ~in_product_since:rel_ely ~qualifier:DynamicRO ~ty:(Set (Ref _pool_update)) "updates" "Set of updates";
+         field ~in_oss_since:None ~in_product_since:rel_inverness ~qualifier:DynamicRO ~ty:(Set (Ref _host_update)) "host_updates" "A list of host_update objects that hold metadata specific to this host for each pool_update object";
          field ~qualifier:DynamicRO ~ty:(Set (Ref _pbd)) "PBDs" "physical blockdevices";
          field ~qualifier:DynamicRO ~ty:(Set (Ref _hostcpu)) "host_CPUs" "The physical CPUs on this host";
          field ~qualifier:DynamicRO ~in_product_since:rel_midnight_ride ~default_value:(Some (VMap [])) ~ty:(Map(String, String)) "cpu_info" "Details about the physical CPUs on this host";
@@ -9749,6 +9772,7 @@ let all_system =
     pvs_cache_storage;
     feature;
     sdn_controller;
+    host_update;
   ]
 
 (** These are the pairs of (object, field) which are bound together in the database schema *)
@@ -9804,6 +9828,10 @@ let all_relations =
     (_host_crashdump, "host"), (_host, "crashdumps");
     (_host_patch, "host"), (_host, "patches");
     (_host_patch, "pool_patch"), (_pool_patch, "host_patches");
+
+    (* host_update relations *)
+    (_host_update, "pool_update"), (_pool_update, "host_updates");
+    (_host_update, "host"), (_host, "host_updates");
 
     (_host, "updates"), (_pool_update, "hosts");
 
@@ -9905,6 +9933,7 @@ let expose_get_all_messages_for = [
   _sm;
   _pool_patch;
   _pool_update;
+  _host_update;
   _bond;
   _vlan;
   _blob;

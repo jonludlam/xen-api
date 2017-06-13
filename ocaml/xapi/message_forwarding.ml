@@ -2656,6 +2656,10 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
         (fun session_id rpc -> Client.Host_patch.apply rpc session_id self)
   end
 
+  module Host_update = struct
+
+  end
+
   module Pool_patch = struct
     let apply ~__context ~self ~host =
       info "Pool_patch.apply: pool patch = '%s'; host = '%s'" (pool_patch_uuid ~__context self) (host_uuid ~__context host);
