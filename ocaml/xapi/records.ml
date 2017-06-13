@@ -1060,6 +1060,38 @@ let pool_patch_record rpc session_id patch =
         make_field ~name:"update"              ~get:(fun () -> get_uuid_from_ref (x ()).API.pool_patch_pool_update) ();
       ]}
 
+let host_update_record rpc session_id host_update =
+  let _ref = ref host_update in
+  let empty_record = ToGet (fun () -> Client.Host_update.get_record rpc session_id !_ref) in
+  let record = ref empty_record in
+  let x () = lzy_get record in
+  let after_apply_guidance_to_string = function
+    | `restartHVM -> "restartHVM"
+    | `restartPV -> "restartPV"
+    | `restartHost -> "restartHost"
+    | `restartXAPI -> "restartXAPI"
+  in
+  let after_apply_guidance_to_string_set =
+    List.map after_apply_guidance_to_string
+  in
+  let after_apply_guidance () =
+    after_apply_guidance_to_string_set (x ()).API.host_update_actions_required
+  in
+  { setref=(fun r -> _ref := r; record := empty_record );
+    setrefrec=(fun (a,b) -> _ref := a; record := Got b);
+    record=x;
+    getref=(fun () -> !_ref);
+    fields =
+      [
+        make_field ~name:"uuid"                ~get:(fun () -> (x ()).API.host_update_uuid) ();
+        make_field ~name:"host-uuid"           ~get:(fun () -> get_uuid_from_ref (x ()).API.host_update_host) ();
+        make_field ~name:"pool-update-uuid"    ~get:(fun () -> get_uuid_from_ref (x ()).API.host_update_pool_update) ();
+        make_field ~name:"actions-required"    ~get:(fun () -> String.concat ", " (after_apply_guidance ())) ~get_set:after_apply_guidance ();
+        make_field ~name:"timestamp-applied"   ~get:(fun () -> Date.to_string (x ()).API.host_update_timestamp_applied) ();
+        make_field ~name:"partial"             ~get:(fun () -> string_of_bool (x ()).API.host_update_partial) ();
+      ]}
+
+
 let pool_update_record rpc session_id update =
   let _ref = ref update in
   let empty_record = ToGet (fun () -> Client.Pool_update.get_record rpc session_id !_ref) in

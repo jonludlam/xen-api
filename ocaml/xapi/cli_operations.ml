@@ -813,6 +813,7 @@ let gen_cmds rpc session_id =
     ; Client.Feature.(mk get_all get_all_records_where get_by_uuid feature_record "feature" []
         ["uuid"; "name-label"; "name-description"; "enabled"; "experimental"; "version"; "host-uuid"] rpc session_id)
     ; Client.SDN_controller.(mk get_all get_all_records_where get_by_uuid sdn_controller_record "sdn-controller" [] ["uuid"; "protocol"; "address"; "port"] rpc session_id)
+    ; Client.Host_update.(mk get_all get_all_records_where get_by_uuid host_update_record "host-update" [] ["uuid"] rpc session_id)
     ]
 
 (* NB, might want to put these back in at some point
