@@ -164,8 +164,16 @@ module VMSetBiosStrings = Generic.Make (Generic.EncapsulateState (struct
   ]
 end))
 
+let test_marshalling () =
+  let test = Rpc.Dict [ "biosvendor", Rpc.String "test" ] in
+  let test' = API.vm_bios_string_keys_to_string_map_of_rpc test in
+  let expected = [ `biosvendor, "test" ] in
+  OUnit.assert_equal test' expected
+
+
 let test =
   "test_vm" >:::
   [
     "test_vm_set_bios_strings" >::: VMSetBiosStrings.tests;
+    "test_vm_bios_string_keys_marshalling" >:: test_marshalling;
   ]
