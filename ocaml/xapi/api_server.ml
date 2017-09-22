@@ -92,6 +92,8 @@ module Actions = struct
   module Feature = struct end
   module SDN_controller = Xapi_sdn_controller
   module Vdi_nbd_server_info = struct end
+  module Cluster = Xapi_cluster
+  module Cluster_host = Xapi_cluster_host
 end
 (** Use the server functor to make an XML-RPC dispatcher. *)
 module Forwarder = Message_forwarding.Forward (Actions)
