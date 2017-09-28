@@ -772,7 +772,8 @@ let make_param_funs getall getallrecs getbyuuid record class_name def_filters de
   in
   gen_frontend rpc session_id
 
-
+(* the fields to show when doing `xe <class>-list`, whereas
+   `xe <class>-param-list uuid=...` shows all the non-hidden fields of a record *)
 let gen_cmds rpc session_id =
   let mk = make_param_funs in
   List.concat
@@ -821,6 +822,8 @@ let gen_cmds rpc session_id =
     ; Client.Feature.(mk get_all get_all_records_where get_by_uuid feature_record "feature" []
         ["uuid"; "name-label"; "name-description"; "enabled"; "experimental"; "version"; "host-uuid"] rpc session_id)
     ; Client.SDN_controller.(mk get_all get_all_records_where get_by_uuid sdn_controller_record "sdn-controller" [] ["uuid"; "protocol"; "address"; "port"] rpc session_id)
+    ; Client.Cluster.(mk get_all get_all_records_where get_by_uuid cluster_record "cluster" [] ["uuid";"cluster_hosts";"network";"cluster_token";"cluster_stack";"allowed_operations";"current_operations";"pool_auto_join";"cluster_config";"other_config"] rpc session_id)
+    ; Client.Cluster_host.(mk get_all get_all_records_where get_by_uuid cluster_host_record "cluster-host" [] ["uuid";"cluster";"host";"enabled";"allowed_operations";"current_operations";"other_config"] rpc session_id)
     ]
 
 (* NB, might want to put these back in at some point
