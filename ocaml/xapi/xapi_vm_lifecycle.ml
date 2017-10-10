@@ -376,11 +376,11 @@ let check_operation_error ~__context ~ref ~op ~strict =
   let is_snapshot = vmr.Db_actions.vM_is_a_snapshot in
   let vdis = List.filter_map (fun vbd -> try Some (Db.VBD.get_VDI ~__context ~self:vbd) with _ -> None) vmr.Db_actions.vM_VBDs |> List.filter (Db.is_valid_ref __context) in
 
-  (* Check if the operation has been explicitly blocked by the/a user *)
   let current_error = None in
 
   let check c f = match c with | Some e -> Some e | None -> f () in
 
+  (* Check if the operation has been explicitly blocked by the/a user *)
   let current_error = check current_error (fun () ->
       Opt.map (fun v -> Api_errors.operation_blocked, [ref_str; v])
         (assoc_opt op vmr.Db_actions.vM_blocked_operations)) in
