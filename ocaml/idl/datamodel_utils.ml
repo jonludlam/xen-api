@@ -74,6 +74,7 @@ module Types = struct
     let all = List.setify (selves @ set_self @ field_types @ return_types @ param_types) in
     List.setify (List.concat (List.map decompose all))
 
+
 end
 
 (** Functions for processing relationships from the model *)

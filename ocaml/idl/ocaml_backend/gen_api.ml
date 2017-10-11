@@ -27,9 +27,6 @@ let overrides = [
   "vm_operations_to_string_map",(
     "let rpc_of_vm_operations_to_string_map x = Rpc.Dict (List.map (fun (x,y) -> (match rpc_of_vm_operations x with Rpc.String x -> x | _ -> failwith \"Marshalling error\"), Rpc.String y) x)\n" ^
     "let vm_operations_to_string_map_of_rpc x = match x with Rpc.Dict l -> List.map (function (x,y) -> vm_operations_of_rpc (Rpc.String x), string_of_rpc y) l | _ -> failwith \"Unmarshalling error\"\n");
-  "bond_mode",(
-    "let rpc_of_bond_mode x = match x with `balanceslb -> Rpc.String \"balance-slb\" | `activebackup -> Rpc.String \"active-backup\" | `lacp -> Rpc.String \"lacp\"\n"^
-    "let bond_mode_of_rpc x = match x with Rpc.String \"balance-slb\" -> `balanceslb | Rpc.String \"active-backup\" -> `activebackup | Rpc.String \"lacp\" -> `lacp | _ -> failwith \"Unmarshalling error in bond-mode\"\n");
   "int64_to_float_map",(
     "let rpc_of_int64_to_float_map x = Rpc.Dict (List.map (fun (x,y) -> Int64.to_string x, Rpc.Float y) x)\n" ^
     "let int64_to_float_map_of_rpc x = match x with Rpc.Dict x -> List.map (fun (x,y) -> Int64.of_string x, float_of_rpc y) x | _ -> failwith \"Unmarshalling error\"");
@@ -39,25 +36,27 @@ let overrides = [
   "int64_to_string_set_map",(
     "let rpc_of_int64_to_string_set_map x = Rpc.Dict (List.map (fun (x,y) -> Int64.to_string x, rpc_of_string_set y) x)\n" ^
     "let int64_to_string_set_map_of_rpc x = match x with Rpc.Dict x -> List.map (fun (x,y) -> Int64.of_string x, string_set_of_rpc y) x | _ -> failwith \"Unmarshalling error\"");
-  "event_operation",(
-    "let rpc_of_event_operation x = match x with | `add -> Rpc.String \"add\" | `del -> Rpc.String \"del\" | `_mod -> Rpc.String \"mod\"\n"^
-    "let event_operation_of_rpc x = match x with | Rpc.String \"add\" -> `add | Rpc.String \"del\" -> `del | Rpc.String \"mod\" -> `_mod | _ -> failwith \"Unmarshalling error\"");
-
 ]
 
 
-(** Generate a single type declaration for simple types (eg not containing references to record objects) *)
-let gen_non_record_type highapi tys =
+let gen_type highapi tys =
   let rec aux accu = function
     | []                           -> accu
     | DT.String               :: t
     | DT.Int                  :: t
     | DT.Float                :: t
-    | DT.Bool                 :: t
-    | DT.Record _             :: t
-    | DT.Map (_, DT.Record _) :: t
-    | DT.Set (DT.Record _)    :: t -> aux accu t
-    | DT.Set (DT.Enum (n,_) as e) as ty :: t ->
+    | DT.Bool                 :: t -> aux accu t
+    | DT.Record record        :: t ->
+    let obj_name = OU.ocaml_of_record_name record in
+    let all_fields = DU.fields_of_obj (Dm_api.get_obj_by_name highapi ~objname:record) in
+    let field fld = OU.ocaml_of_record_field (obj_name :: fld.DT.full_name) in
+    let map_fields fn = String.concat "; " (List.map (fun field -> fn field) all_fields) in
+    let regular_def fld = sprintf "%s : %s [@key \"%s\"]" (field fld) (OU.alias_of_ty fld.DT.ty) (String.concat "_" fld.DT.full_name) in
+
+    let type_t = sprintf "type %s_t = { %s } [@@deriving rpc]" obj_name (map_fields regular_def) in
+    aux (type_t :: accu) t
+
+    | DT.Set (e) as ty :: t ->
       aux (sprintf "type %s = %s list [@@deriving rpc]" (OU.alias_of_ty ty) (OU.alias_of_ty e) :: accu) t
     | ty                      :: t ->
       let alias = OU.alias_of_ty ty in
@@ -66,41 +65,6 @@ let gen_non_record_type highapi tys =
       else aux (sprintf "type %s = %s [@@deriving rpc]" (OU.alias_of_ty ty) (OU.ocaml_of_ty ty) :: accu) t in
   aux [] tys
 
-(** Generate a list of modules for each record kind *)
-let gen_record_type ~with_module highapi tys =
-  let rec aux accu = function
-    | []                    -> accu
-    | DT.Record record :: t ->
-
-      let obj_name = OU.ocaml_of_record_name record in
-      let all_fields = DU.fields_of_obj (Dm_api.get_obj_by_name highapi ~objname:record) in
-      let field fld = OU.ocaml_of_record_field (obj_name :: fld.DT.full_name) in
-      let map_fields fn = String.concat "; " (List.map (fun field -> fn field) all_fields) in
-      let regular_def fld = sprintf "%s : %s" (field fld) (OU.alias_of_ty fld.DT.ty) in
-
-      let make_of_field fld =
-        sprintf "\"%s\",rpc_of_%s x.%s" (String.concat "_" fld.DT.full_name)
-          (OU.alias_of_ty fld.DT.ty) (OU.ocaml_of_record_field (obj_name :: fld.DT.full_name))
-      in
-
-      let make_to_field fld =
-        sprintf "%s = %s_of_rpc (List.assoc \"%s\" x)" (field fld) (OU.alias_of_ty fld.DT.ty)
-          (String.concat "_" fld.DT.full_name)
-      in
-
-      let type_t = sprintf "type %s_t = { %s }" obj_name (map_fields regular_def) in
-      let others = if not with_module then
-          []
-        else [
-          sprintf "let rpc_of_%s_t x = Rpc.Dict [ %s ]" obj_name (map_fields make_of_field);
-          sprintf "let %s_t_of_rpc x = on_dict (fun x -> { %s }) x" obj_name (map_fields make_to_field);
-          sprintf "type ref_%s_to_%s_t_map = (ref_%s * %s_t) list [@@deriving rpc]" record obj_name record obj_name;
-          sprintf "type %s_t_set = %s_t list [@@deriving rpc]" obj_name obj_name;
-          ""
-        ] in
-      aux (type_t :: others @ accu) t
-    | _                :: t -> aux accu t in
-  aux [] tys
 
 let gen_client highapi =
   List.iter (List.iter print)
@@ -130,8 +94,11 @@ let add_set_enums types =
    list have nothing depending on them. Later elements in the list may
    depend upon types earlier in the list *)
 let toposort_types highapi types =
+  Printf.fprintf stderr "In toposort\n%!";
   let rec inner result remaining =
-    let rec references name = function
+    Printf.fprintf stderr "In inner\n%!";
+    let rec references ty = function
+      | ty' when ty=ty' -> true
       | DT.String
       | DT.Int
       | DT.Float
@@ -139,19 +106,17 @@ let toposort_types highapi types =
       | DT.DateTime
       | DT.Ref _
       | DT.Enum _ -> false
-      | DT.Set ty -> references name ty
-      | DT.Map (ty, ty') -> (references name ty) || (references name ty')
-      | DT.Record record when record = name -> true
+      | DT.Set ty' -> references ty ty'
+      | DT.Map (ty', ty'') -> (references ty ty') || (references ty ty'')
       | DT.Record record ->
         let all_fields = DU.fields_of_obj (Dm_api.get_obj_by_name highapi ~objname:record) in
-        List.exists (fun fld -> references name fld.DT.ty) all_fields
+        List.exists (fun fld -> references ty fld.DT.ty) all_fields
     in
     let (ty_ref,ty_not_ref) =
-      List.partition (fun ty -> match ty with
-      | DT.Record name ->
-        let referencing = List.filter (references name) remaining in
-        List.length referencing > 1
-      | _ -> false) remaining
+      List.partition (fun ty ->
+        List.exists (fun ty' ->
+          (ty != ty') && (references ty ty')
+          ) remaining) remaining
     in
     if List.length ty_ref > 0
     then inner (result @ ty_not_ref) ty_ref
@@ -192,8 +157,7 @@ let gen_client_types highapi =
         ]; [
           "let on_dict f = function | Rpc.Dict x -> f x | _ -> failwith \"Expected Dictionary\""
         ];
-        gen_non_record_type highapi all_types;
-        gen_record_type ~with_module:true highapi (toposort_types highapi all_types);
+        gen_type highapi (toposort_types highapi all_types);
         O.Signature.strings_of (Gen_client.gen_signature highapi);
         [ "module Legacy = struct";
           "open XMLRPC";
@@ -231,7 +195,7 @@ let gen_db_actions highapi =
          [ "open API" ];
 
          (* These records have the hidden fields inside *)
-         gen_record_type ~with_module:false highapi only_records;
+         gen_type highapi only_records;
 
          (* NB record types are ignored by dm_to_string and string_to_dm *)
          O.Module.strings_of (dm_to_string all_types);
