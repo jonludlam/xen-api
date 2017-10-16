@@ -1488,7 +1488,13 @@ let _ =
 
   error Api_errors.pvs_server_address_in_use ["address"]
     ~doc:"The address specified is already in use by an existing PVS_server object"
-    ()
+    ();
+
+  (* clustering errors *)
+  error Api_errors.cluster_create_in_progress []
+    ~doc:"The operation could not be performed because cluster creation is in progress." ();
+  error Api_errors.cluster_already_exists []
+    ~doc:"A cluster already exists in the pool." ()
 
 let _ =
   message (fst Api_messages.ha_pool_overcommitted) ~doc:"Pool has become overcommitted: it can no longer guarantee to restart protected VMs if the configured number of hosts fail." ();
@@ -6900,9 +6906,10 @@ let crashdump =
     ()
 
 let pool_operations =
-  Enum ("pool_allowed_operations",
+  Enum ("pool_allowed_operations", (* FIXME: This should really be called `pool_operations`, to avoid confusion with the Pool.allowed_operations field *)
         [ "ha_enable", "Indicates this pool is in the process of enabling HA";
           "ha_disable", "Indicates this pool is in the process of disabling HA";
+          "cluster_create", "Indicates this pool is in the process of creating a cluster";
         ])
 
 let pool_enable_ha = call

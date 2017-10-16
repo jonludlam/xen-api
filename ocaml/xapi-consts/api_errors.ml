@@ -568,3 +568,6 @@ let pvs_proxy_already_present = "PVS_PROXY_ALREADY_PRESENT"
 let pvs_server_address_in_use = "PVS_SERVER_ADDRESS_IN_USE"
 
 let extension_protocol_failure = "EXTENSION_PROTOCOL_FAILURE"
+
+let cluster_create_in_progress = "CLUSTER_CREATE_IN_PROGRESS"
+let cluster_already_exists = "CLUSTER_ALREADY_EXISTS"
