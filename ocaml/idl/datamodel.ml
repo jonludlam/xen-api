@@ -7485,18 +7485,18 @@ let pool_disable_ssl_legacy = call
     ~allowed_roles:_R_POOL_OP
     ()
 
-let pool_set_igmp_snooping_enabled = call  
-    ~in_oss_since:None  
-    ~lifecycle:[  
-      Published, rel_inverness, "Enable or disable IGMP Snooping on the pool.";  
-    ]  
-    ~name:"set_igmp_snooping_enabled"  
-    ~params:[  
-      Ref _pool, "self", "The pool";  
-      Bool, "value", "Enable or disable IGMP Snooping on the pool"  
-    ]  
-    ~doc:"Enable or disable IGMP Snooping on the pool."  
-    ~allowed_roles:_R_POOL_OP  
+let pool_set_igmp_snooping_enabled = call
+    ~in_oss_since:None
+    ~lifecycle:[
+      Published, rel_inverness, "Enable or disable IGMP Snooping on the pool.";
+    ]
+    ~name:"set_igmp_snooping_enabled"
+    ~params:[
+      Ref _pool, "self", "The pool";
+      Bool, "value", "Enable or disable IGMP Snooping on the pool"
+    ]
+    ~doc:"Enable or disable IGMP Snooping on the pool."
+    ~allowed_roles:_R_POOL_OP
     ()
 
 let pool_has_extension = call
@@ -9978,7 +9978,7 @@ module Cluster = struct
     ~allowed_roles:_R_POOL_ADMIN
     ()
 
-    let pool_create = call
+  let pool_create = call
     ~name:"pool_create"
     ~doc:"Attempt to create a Cluster from the entire pool"
     ~result:(Ref _cluster, "the new Cluster")
@@ -9987,6 +9987,14 @@ module Cluster = struct
       ; String,       "cluster_stack", "simply the string 'corosync'. No other cluster stacks are currently supported"
       ; Ref _network, "network",       "the single network on which corosync carries out its inter-host communications"
       ]
+    ~lifecycle
+    ~allowed_roles:_R_POOL_ADMIN
+    ()
+
+  let pool_resync = call
+    ~name:"pool_resync"
+    ~doc:"Resynchronise the cluster_host objects across the pool. Creates them where they need creating and then plugs them"
+    ~params:[ Ref _cluster, "cluster", "The cluster to resync"]
     ~lifecycle
     ~allowed_roles:_R_POOL_ADMIN
     ()
@@ -10040,6 +10048,7 @@ module Cluster = struct
         [ create
         ; destroy
         ; pool_create
+        ; pool_resync
         ]
       ()
 end
