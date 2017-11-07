@@ -306,3 +306,5 @@ val apply_guest_agent_config : __context:Context.t -> host:API.ref_host -> unit
 
 (* See Xapi_pgpu.mxgpu_vf_setup *)
 val mxgpu_vf_setup : __context:Context.t -> host:API.ref_host -> unit
+
+val set_iscsi_iqn : __context:Context.t -> host:API.ref_host -> value:string -> unit

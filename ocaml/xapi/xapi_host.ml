@@ -1743,3 +1743,6 @@ let apply_guest_agent_config ~__context ~host =
 
 let mxgpu_vf_setup ~__context ~host =
   Xapi_pgpu.mxgpu_vf_setup __context
+
+let set_iscsi_iqn ~__context ~host ~value =
+  Db.Host.set_iscsi_iqn ~__context ~self:host ~value

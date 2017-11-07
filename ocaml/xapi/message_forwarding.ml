@@ -2616,6 +2616,12 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
         (fun session_id rpc ->
            Client.Host.mxgpu_vf_setup rpc session_id host)
 
+    let set_iscsi_iqn ~__context ~host ~value =
+      info "Host.set_iscsi_iqn: host='%s' iqn='%s'" (host_uuid ~__context host) value;
+      let local_fn = Local.Host.set_iscsi_iqn ~host ~value in
+      do_op_on ~local_fn ~__context ~host
+        (fun session_id rpc ->
+          Client.Host.set_iscsi_iqn rpc session_id host value)
   end
 
   module Host_crashdump = struct
