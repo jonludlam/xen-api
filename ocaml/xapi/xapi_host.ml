@@ -1745,4 +1745,5 @@ let mxgpu_vf_setup ~__context ~host =
   Xapi_pgpu.mxgpu_vf_setup __context
 
 let set_iscsi_iqn ~__context ~host ~value =
-  Db.Host.set_iscsi_iqn ~__context ~self:host ~value
+  Db.Host.set_iscsi_iqn ~__context ~self:host ~value;
+  Xapi_host_helpers.InitiatorName.set_initiator_name value
