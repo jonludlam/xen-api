@@ -2601,6 +2601,8 @@ let start ~__context ~self paused force =
             end else
               Client.VM.start dbg id force |> sync_with_task __context queue_name);
 
+        Events_from_xenopsd.with_suppressed queue_name dbg vm_id (fun _ -> ());
+
         check_power_state_is ~__context ~self ~expected:(if paused then `Paused else `Running)
       with e ->
         error "Caught exception starting VM: %s" (string_of_exn e);
