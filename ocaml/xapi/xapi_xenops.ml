@@ -1154,7 +1154,11 @@ module Xenopsd_metadata = struct
       (* This can fail during a localhost live migrate; but this is safe to ignore *)
       debug "We have not removed metadata from xenopsd because VM %s is still running" id
     | Does_not_exist(_) ->
-      debug "Metadata for VM %s was already removed" id
+      debug "Metadata for VM %s was already removed" id;
+      (* Blow away the caches anyway *)
+      Xenops_cache._unregister_nolock id;
+      Xapi_cache._unregister_nolock id
+
 
 
   (* Unregisters a VM with xenopsd, and cleans up metadata and caches *)
@@ -1335,10 +1339,6 @@ let update_vm ~__context id =
       let self = Db.VM.get_by_uuid ~__context ~uuid:id in
       let localhost = Helpers.get_localhost ~__context in
 
-      (* If we're getting events from xenopsd, the VM must be resident *)
-      if Db.VM.get_resident_on ~__context ~self <> localhost
-      then set_resident_on ~__context ~self;
-
       let previous = Xenops_cache.find_vm id in
       let dbg = Context.string_of_task __context in
       let module Client = (val make_client (queue_of_vm ~__context ~self) : XENOPS) in
@@ -1409,6 +1409,12 @@ let update_vm ~__context id =
                       error "Caught %s: while updating VM %s guest_agent" (Printexc.to_string e) id
                  ) state.domids
             ) info in
+
+        (* Always check the resident_on *)
+        let power_state = xenapi_of_xenops_power_state (Opt.map (fun x -> (snd x).power_state) info) in
+        if power_state <> `Halted && Db.VM.get_resident_on ~__context ~self <> localhost
+        then set_resident_on ~__context ~self;
+
         (* Notes on error handling: if something fails we log and continue, to
            maximise the amount of state which is correctly synced. If something
            does fail then we may end up permanently out-of-sync until either a
@@ -1423,6 +1429,7 @@ let update_vm ~__context id =
             (* This will mark VBDs, VIFs as detached and clear resident_on
                if the VM has permanently shutdown.  current-operations
                should not be reset as there maybe a checkpoint is ongoing*)
+
             Xapi_vm_lifecycle.force_state_reset_keep_current_operations ~__context ~self ~value:power_state;
             if power_state = `Running then create_guest_metrics_if_needed ();
             if power_state = `Suspended || power_state = `Halted then begin
