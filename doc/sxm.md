@@ -893,3 +893,78 @@ We also try to remove the VM record from the destination if we managed to send i
 
 Finally we check for mirror failure in the task - this is set by the events thread watching for events from the storage layer, in [storage_access.ml](https://github.com/xapi-project/xen-api/blob/f75d51e7a3eff89d952330ec1a739df85a2895e2/ocaml/xapi/storage_access.ml#L1169-L1207)
 
+
+## Storage code
+
+The part of the code that is conceptually in the storage layer, but physically in xapi, is located in
+[storage_migrate.ml](https://github.com/xapi-project/xen-api/blob/f75d51e7a3eff89d952330ec1a739df85a2895e2/ocaml/xapi/storage_migrate.ml). There are logically a few separate parts to this file:
+
+* A [stateful module](https://github.com/xapi-project/xen-api/blob/f75d51e7a3eff89d952330ec1a739df85a2895e2/ocaml/xapi/storage_migrate.ml#L34-L204) for persisting state across xapi restarts.
+* Some general [helper functions](https://github.com/xapi-project/xen-api/blob/f75d51e7a3eff89d952330ec1a739df85a2895e2/ocaml/xapi/storage_migrate.ml#L206-L281)
+* Some quite specific [helper](https://github.com/xapi-project/xen-api/blob/f75d51e7a3eff89d952330ec1a739df85a2895e2/ocaml/xapi/storage_migrate.ml#L206-L281) [functions](https://github.com/xapi-project/xen-api/blob/f75d51e7a3eff89d952330ec1a739df85a2895e2/ocaml/xapi/storage_migrate.ml#L738-L791) related to actions to be taken on deactivate/detach
+* An [NBD handler](https://github.com/xapi-project/xen-api/blob/f75d51e7a3eff89d952330ec1a739df85a2895e2/ocaml/xapi/storage_migrate.ml#L793-L818)
+* The implementations of the SMAPIv2 [mirroring APIs](https://github.com/xapi-project/xcp-idl/blob/master/storage/storage_interface.ml#L430-L460)
+
+Let's start by considering the way the storage APIs are intended to be used.
+
+### Copying a VDI
+
+`DATA.copy` takes several parameters:
+* `dbg` - a debug string
+* `sr` - the source SR (a uuid)
+* `vdi` - the source VDI (a uuid)
+* `dp` - **unused**
+* `url` - a URL on which SMAPIv2 API calls can be made
+* `sr` - the destination SR in which the VDI should be copied
+
+and returns a parameter of type `Task.id`. The API call is intended to be called in an asynchronous fashion - ie., the caller makes the call, receives the task ID back and polls or uses the event mechanism to wait until the task has completed. The task may be cancelled via the `Task.cancel` API call. The result of the operation is obtained by calling TASK.stat, which returns a record:
+
+```ocaml
+	type t = {
+		id: id;
+		dbg: string;
+		ctime: float;
+		state: state;
+		subtasks: (string * state) list;
+		debug_info: (string * string) list;
+		backtrace: string;
+	}
+```
+
+Where the `state` field contains the result once the task has completed:
+
+```ocaml
+type async_result_t =
+	| Vdi_info of vdi_info
+	| Mirror_id of Mirror.id
+
+type completion_t = {
+	duration : float;
+	result : async_result_t option
+}
+
+type state =
+	| Pending of float
+	| Completed of completion_t
+	| Failed of Rpc.t
+```
+
+Once the result has been obtained from the task, the task should be destroyed via the `TASK.destroy` API call.
+
+The implementation uses the `url` parameter to make SMAPIv2 calls to the destination SR. This is used, for example, to invoke a VDI.create call if necessary. The URL contains an authentication token within it (valid for the duration of the XenAPI call that caused this DATA.copy API call).
+
+The implementation tries to minimize the amount of data copied by looking for related VDIs on the destination SR. See below for more details.
+
+
+### Mirroring a VDI
+
+`DATA.MIRROR.start` takes a similar set of parameters to that of copy:
+* `dbg` - a debug string
+* `sr` - the source SR (a uuid)
+* `vdi` - the source VDI (a uuid)
+* `dp` - the datapath on which the VDI has been attached
+* `url` - a URL on which SMAPIv2 API calls can be made
+* `sr` - the destination SR in which the VDI should be copied
+
+Similar to copy above, this returns a task id. Unlike for copy though, the operation is ongoing after the API call completes, since new writes need to be mirrored to the destination.
+
