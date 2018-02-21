@@ -966,5 +966,637 @@ The implementation tries to minimize the amount of data copied by looking for re
 * `url` - a URL on which SMAPIv2 API calls can be made
 * `sr` - the destination SR in which the VDI should be copied
 
-Similar to copy above, this returns a task id. Unlike for copy though, the operation is ongoing after the API call completes, since new writes need to be mirrored to the destination.
+Similar to copy above, this returns a task id. The task 'completes' once the mirror has been set up - that is, at any point afterwards we can detach the disk and the destination disk will be identical to the source. Unlike for copy the operation is ongoing after the API call completes, since new writes need to be mirrored to the destination. Therefore the completion type of the mirror operation is `Mirror_id` which contains a handle on which further API calls related to the mirror call can be made. For example [MIRROR.stat](https://github.com/xapi-project/xcp-idl/blob/a999ef6191629c8f68377f7c412ee98fc6a39dea/storage/storage_interface.ml#L446) whose signature is:
 
+```ocaml
+MIRROR.stat: dbg:debug_info -> id:Mirror.id -> Mirror.t
+```
+
+The return type of this call is a record containing information about the mirror:
+
+```ocaml
+type state =
+	| Receiving
+	| Sending
+	| Copying
+
+type t = {
+	source_vdi : vdi;
+	dest_vdi : vdi;
+	state : state list;
+	failed : bool;
+}
+```
+
+Note that state is a list since the initial phase of the operation requires both copying and mirroring.
+
+Additionally the mirror can be cancelled using the `MIRROR.stop` API call.
+
+### Code walkthrough
+
+let's go through the implementation of `copy`:
+
+#### DATA.copy
+
+```ocaml
+let copy ~task ~dbg ~sr ~vdi ~dp ~url ~dest =
+  debug "copy sr:%s vdi:%s url:%s dest:%s" sr vdi url dest;
+  let remote_url = Http.Url.of_string url in
+  let module Remote = Client(struct let rpc = rpc ~srcstr:"smapiv2" ~dststr:"dst_smapiv2" remote_url end) in
+```
+
+Here we are constructing a module `Remote` on which we can do SMAPIv2 calls directly on the destination.
+
+```ocaml
+  try
+```
+
+Wrap the whole function in an exception handler.
+
+```ocaml
+    (* Find the local VDI *)
+    let vdis = Local.SR.scan ~dbg ~sr in
+    let local_vdi =
+      try List.find (fun x -> x.vdi = vdi) vdis
+      with Not_found -> failwith (Printf.sprintf "Local VDI %s not found" vdi) in
+```
+
+We first find the metadata for our source VDI by doing a local SMAPIv2 call `SR.scan`. This returns a list of VDI metadata, out of which we extract the VDI we're interested in.
+
+```ocaml
+    try
+```
+
+Another exception handler. This looks redundant to me right now.
+
+```
+      let similar_vdis = Local.VDI.similar_content ~dbg ~sr ~vdi in
+      let similars = List.map (fun vdi -> vdi.content_id) similar_vdis in
+      debug "Similar VDIs to %s = [ %s ]" vdi (String.concat "; " (List.map (fun x -> Printf.sprintf "(vdi=%s,content_id=%s)" x.vdi x.content_id) similar_vdis));
+```
+
+Here we look for related VDIs locally using the `VDI.similar_content` SMAPIv2 API call. This searches for related VDIs and returns an ordered list where the most similar is first in the list. It returns both clones and snapshots, and hence is more general than simply following `snapshot_of` links.
+
+```
+      let remote_vdis = Remote.SR.scan ~dbg ~sr:dest in
+      (** We drop cbt_metadata VDIs that do not have any actual data *)
+      let remote_vdis = List.filter (fun vdi -> vdi.ty <> "cbt_metadata") remote_vdis in
+
+      let nearest = List.fold_left
+          (fun acc content_id -> match acc with
+             | Some x -> acc
+             | None ->
+               try Some (List.find (fun vdi -> vdi.content_id = content_id && vdi.virtual_size <= local_vdi.virtual_size) remote_vdis)
+               with Not_found -> None) None similars in
+
+      debug "Nearest VDI: content_id=%s vdi=%s"
+        (Opt.default "None" (Opt.map (fun x -> x.content_id) nearest))
+        (Opt.default "None" (Opt.map (fun x -> x.vdi) nearest));
+```
+
+Here we look for VDIs on the destination with the same `content_id` as one of the locally similar VDIs. We will use this as a base image and only copy deltas to the destination. This is done by cloning the VDI on the destination and then using `sparse_dd` to find the deltas from our local disk to our local copy of the content_id disk and streaming these to the destination. Note that we need to ensure the VDI is smaller than the one we want to copy since we can't resize disks downwards in size.
+
+```ocaml
+      let remote_base = match nearest with
+        | Some vdi ->
+          debug "Cloning VDI %s" vdi.vdi;
+          let vdi_clone = Remote.VDI.clone ~dbg ~sr:dest ~vdi_info:vdi in
+          if vdi_clone.virtual_size <> local_vdi.virtual_size then begin
+            let new_size = Remote.VDI.resize ~dbg ~sr:dest ~vdi:vdi_clone.vdi ~new_size:local_vdi.virtual_size in
+            debug "Resize remote VDI %s to %Ld: result %Ld" vdi_clone.vdi local_vdi.virtual_size new_size;
+          end;
+          vdi_clone
+        | None ->
+          debug "Creating a blank remote VDI";
+          Remote.VDI.create ~dbg ~sr:dest ~vdi_info:{ local_vdi with sm_config = [] }  in
+```
+
+If we've found a base VDI we clone it and resize it immediately. If there's nothing on the destination already we can use, we just create a new VDI. Note that the calls to create and clone may well fail if the destination host is not the SRmaster. This is [handled purely in the `rpc` function](https://github.com/xapi-project/xen-api/blob/master/ocaml/xapi/storage_migrate.ml#L214-L229):
+
+```ocaml
+let rec rpc ~srcstr ~dststr url call =
+  let result = XMLRPC_protocol.rpc ~transport:(transport_of_url url)
+      ~srcstr ~dststr ~http:(xmlrpc ~version:"1.0" ?auth:(Http.Url.auth_of url) ~query:(Http.Url.get_query_params url) (Http.Url.get_uri url)) call
+  in
+  if not result.Rpc.success then begin
+    debug "Got failure: checking for redirect";
+    debug "Call was: %s" (Rpc.string_of_call call);
+    debug "result.contents: %s" (Jsonrpc.to_string result.Rpc.contents);
+    match Storage_interface.Exception.exnty_of_rpc result.Rpc.contents with
+    | Storage_interface.Exception.Redirect (Some ip) ->
+      let open Http.Url in
+      let newurl =
+        match url with
+        | (Http h, d) ->
+          (Http {h with host=ip}, d)
+        | _ ->
+          remote_url ip in
+      debug "Redirecting to ip: %s" ip;
+      let r = rpc ~srcstr ~dststr newurl call in
+      debug "Successfully redirected. Returning";
+      r
+    | _ ->
+      debug "Not a redirect";
+      result
+  end
+  else result
+```
+
+Back to the copy function:
+
+```ocaml
+      let remote_copy = copy' ~task ~dbg ~sr ~vdi ~url ~dest ~dest_vdi:remote_base.vdi |> vdi_info in
+```
+
+This calls the actual data copy part. See below for more on that.
+
+```ocaml
+      let snapshot = Remote.VDI.snapshot ~dbg ~sr:dest ~vdi_info:remote_copy in
+      Remote.VDI.destroy ~dbg ~sr:dest ~vdi:remote_copy.vdi;
+      Some (Vdi_info snapshot)
+```
+
+Finally we snapshot the remote VDI to ensure we've got a VDI of type 'snapshot' on the destination, and we delete the non-snapshot VDI.
+
+```ocaml
+    with e ->
+      error "Caught %s: copying snapshots vdi" (Printexc.to_string e);
+      raise (Internal_error (Printexc.to_string e))
+  with
+  | Backend_error(code, params)
+  | Api_errors.Server_error(code, params) ->
+    raise (Backend_error(code, params))
+  | e ->
+    raise (Internal_error(Printexc.to_string e))
+```
+
+The exception handler does nothing - so we leak remote VDIs if the exception happens after we've done our cloning :-(
+
+#### DATA.copy_into
+
+Let's now look at the data-copying part. This is common code shared between `VDI.copy`, `VDI.copy_into` and `MIRROR.start` and hence has some duplication of the calls made above.
+
+```ocaml
+let copy_into ~task ~dbg ~sr ~vdi ~url ~dest ~dest_vdi =
+  copy' ~task ~dbg ~sr ~vdi ~url ~dest ~dest_vdi
+```
+
+`copy_into` is a stub and just calls `copy'`
+
+```ocaml
+let copy' ~task ~dbg ~sr ~vdi ~url ~dest ~dest_vdi =
+  let remote_url = Http.Url.of_string url in
+  let module Remote = Client(struct let rpc = rpc ~srcstr:"smapiv2" ~dststr:"dst_smapiv2" remote_url end) in
+  debug "copy local=%s/%s url=%s remote=%s/%s" sr vdi url dest dest_vdi;
+```
+
+This call takes roughly the same parameters as the ``DATA.copy` call above, except it specifies the destination VDI.
+Once again we construct a module to do remote SMAPIv2 calls
+
+```ocaml
+  (* Check the remote SR exists *)
+  let srs = Remote.SR.list ~dbg in
+  if not(List.mem dest srs)
+  then failwith (Printf.sprintf "Remote SR %s not found" dest);
+```
+
+Sanity check.
+
+```ocaml
+  let vdis = Remote.SR.scan ~dbg ~sr:dest in
+  let remote_vdi =
+    try List.find (fun x -> x.vdi = dest_vdi) vdis
+    with Not_found -> failwith (Printf.sprintf "Remote VDI %s not found" dest_vdi)
+  in
+```
+
+Find the metadata of the destination VDI
+
+```ocaml
+  let dest_content_id = remote_vdi.content_id in
+```
+
+If we've got a local VDI with the same content_id as the destination, we only need copy the deltas, so we make a note of the destination content ID here.
+
+```ocaml
+  (* Find the local VDI *)
+  let vdis = Local.SR.scan ~dbg ~sr in
+  let local_vdi =
+    try List.find (fun x -> x.vdi = vdi) vdis
+    with Not_found -> failwith (Printf.sprintf "Local VDI %s not found" vdi) in
+
+  debug "copy local=%s/%s content_id=%s" sr vdi local_vdi.content_id;
+  debug "copy remote=%s/%s content_id=%s" dest dest_vdi remote_vdi.content_id;
+```
+
+Find the source VDI metadata.
+
+```
+  if local_vdi.virtual_size > remote_vdi.virtual_size then begin
+    (* This should never happen provided the higher-level logic is working properly *)
+    error "copy local=%s/%s virtual_size=%Ld > remote=%s/%s virtual_size = %Ld" sr vdi local_vdi.virtual_size dest dest_vdi remote_vdi.virtual_size;
+    failwith "local VDI is larger than the remote VDI";
+  end;
+```
+
+Sanity check - the remote VDI can't be smaller than the source.
+
+```ocaml
+  let on_fail : (unit -> unit) list ref = ref [] in
+```
+
+We do some ugly error handling here by keeping a mutable list of operations to perform in the event of a failure.
+
+```ocaml
+  let base_vdi =
+    try
+      let x = (List.find (fun x -> x.content_id = dest_content_id) vdis).vdi in
+      debug "local VDI %s has content_id = %s; we will perform an incremental copy" x dest_content_id;
+      Some x
+    with _ ->
+      debug "no local VDI has content_id = %s; we will perform a full copy" dest_content_id;
+      None
+  in
+```
+
+See if we can identify a local VDI with the same `content_id` as the destination. If not, no problem.
+
+```ocaml
+  try
+    let remote_dp = Uuid.string_of_uuid (Uuid.make_uuid ()) in
+    let base_dp = Uuid.string_of_uuid (Uuid.make_uuid ()) in
+    let leaf_dp = Uuid.string_of_uuid (Uuid.make_uuid ()) in
+```
+
+Construct some `datapaths` - named reasons why the VDI is attached - that we will pass to `VDI.attach/activate`.
+
+```ocaml
+    let dest_vdi_url = Http.Url.set_uri remote_url (Printf.sprintf "%s/nbd/%s/%s/%s" (Http.Url.get_uri remote_url) dest dest_vdi remote_dp) |> Http.Url.to_string in
+
+    debug "copy remote=%s/%s NBD URL = %s" dest dest_vdi dest_vdi_url;
+```
+
+Here we are constructing a URI that we use to connect to the destination xapi. The handler for this particular path will verify the credentials and then pass the connection on to tapdisk which will behave as a NBD server. The VDI has to be attached and activate for this to work, unlike the new NBD handler in `xapi-nbd` that is smarter. The handler for this URI is declared [in this file](https://github.com/xapi-project/xen-api/blob/master/ocaml/xapi/storage_migrate.ml#L793-L818)
+
+```ocaml
+    let id=State.copy_id_of (sr,vdi) in
+    debug "Persisting state for copy (id=%s)" id;
+    State.add id State.(Copy_op Copy_state.({
+        base_dp; leaf_dp; remote_dp; dest_sr=dest; copy_vdi=remote_vdi.vdi; remote_url=url}));
+```
+
+Since we're about to perform a long-running operation that is stateful, we persist the state here so that if xapi is restarted we can cancel the operation and not leak VDI attaches. Normally in xapi code we would be doing VBD.plug operations to persist the state in the xapi db, but this is storage code so we have to use a different mechanism.
+
+```ocaml
+    SMPERF.debug "mirror.copy: copy initiated local_vdi:%s dest_vdi:%s" vdi dest_vdi;
+
+    Pervasiveext.finally (fun () ->
+        debug "activating RW datapath %s on remote=%s/%s" remote_dp dest dest_vdi;
+        ignore(Remote.VDI.attach ~dbg ~sr:dest ~vdi:dest_vdi ~dp:remote_dp ~read_write:true);
+        Remote.VDI.activate ~dbg ~dp:remote_dp ~sr:dest ~vdi:dest_vdi;
+
+        with_activated_disk ~dbg ~sr ~vdi:base_vdi ~dp:base_dp
+          (fun base_path ->
+             with_activated_disk ~dbg ~sr ~vdi:(Some vdi) ~dp:leaf_dp
+               (fun src ->
+                  let dd = Sparse_dd_wrapper.start ~progress_cb:(progress_callback 0.05 0.9 task) ?base:base_path true (Opt.unbox src)
+                      dest_vdi_url remote_vdi.virtual_size in
+                  Storage_task.with_cancel task
+                    (fun () -> Sparse_dd_wrapper.cancel dd)
+                    (fun () ->
+                       try Sparse_dd_wrapper.wait dd
+                       with Sparse_dd_wrapper.Cancelled -> Storage_task.raise_cancelled task)
+               )
+          );
+      )
+      (fun () ->
+         Remote.DP.destroy ~dbg ~dp:remote_dp ~allow_leak:false;
+         State.remove_copy id
+      );
+```
+
+In this chunk of code we attach and activate the disk on the remote SR via the SMAPI, then locally attach and activate both the VDI we're copying and the base image we're copying deltas from (if we've got one). We then call `sparse_dd` to copy the data to the remote NBD URL. There is some logic to update progress indicators and to cancel the operation if the SMAPIv2 call `TASK.cancel` is called.
+
+Once the operation has terminated (either on success, error or cancellation), we remove the local attach and activations in the `with_activated_disk` function and the remote attach and activation by destroying the datapath on the remote SR. We then remove the persistent state relating to the copy.
+
+```ocaml
+    SMPERF.debug "mirror.copy: copy complete local_vdi:%s dest_vdi:%s" vdi dest_vdi;
+
+    debug "setting remote=%s/%s content_id <- %s" dest dest_vdi local_vdi.content_id;
+    Remote.VDI.set_content_id ~dbg ~sr:dest ~vdi:dest_vdi ~content_id:local_vdi.content_id;
+    (* PR-1255: XXX: this is useful because we don't have content_ids by default *)
+    debug "setting local=%s/%s content_id <- %s" sr local_vdi.vdi local_vdi.content_id;
+    Local.VDI.set_content_id ~dbg ~sr ~vdi:local_vdi.vdi ~content_id:local_vdi.content_id;
+    Some (Vdi_info remote_vdi)
+```
+
+The last thing we do is to set the local and remote content_id. The local set_content_id is there because the content_id of the VDI is constructed from the location if it is unset in the [storage_access.ml](https://github.com/xapi-project/xen-api/blob/3bf897b3accfc172f365689c3c6927746e059177/ocaml/xapi/storage_access.ml#L69-L72) module of xapi (still part of the storage layer)
+
+
+```ocaml
+  with e ->
+    error "Caught %s: performing cleanup actions" (Printexc.to_string e);
+    perform_cleanup_actions !on_fail;
+    raise e
+```
+
+Here we perform the list of cleanup operations. Theoretically. It seems we don't ever actually set this to anything, so this is dead code.
+
+
+#### DATA.MIRROR.start
+
+```ocaml
+let start' ~task ~dbg ~sr ~vdi ~dp ~url ~dest =
+  debug "Mirror.start sr:%s vdi:%s url:%s dest:%s" sr vdi url dest;
+  SMPERF.debug "mirror.start called sr:%s vdi:%s url:%s dest:%s" sr vdi url dest;
+  let remote_url = Http.Url.of_string url in
+  let module Remote = Client(struct let rpc = rpc ~srcstr:"smapiv2" ~dststr:"dst_smapiv2" remote_url end) in
+
+  (* Find the local VDI *)
+  let vdis = Local.SR.scan ~dbg ~sr in
+  let local_vdi =
+    try List.find (fun x -> x.vdi = vdi) vdis
+    with Not_found -> failwith (Printf.sprintf "Local VDI %s not found" vdi) in
+```
+
+As with the previous calls, we make a remote module for SMAPIv2 calls on the destination, and we find local VDI metadata via `SR.scan`
+
+```ocaml
+  let id = State.mirror_id_of (sr,local_vdi.vdi) in
+```
+
+Mirror ids are deterministically constructed.
+
+```ocaml
+  (* A list of cleanup actions to perform if the operation should fail. *)
+  let on_fail : (unit -> unit) list ref = ref [] in
+```
+
+This `on_fail` list is actually used.
+
+```ocaml
+  try
+    let similar_vdis = Local.VDI.similar_content ~dbg ~sr ~vdi in
+    let similars = List.filter (fun x -> x <> "") (List.map (fun vdi -> vdi.content_id) similar_vdis) in
+    debug "Similar VDIs to %s = [ %s ]" vdi (String.concat "; " (List.map (fun x -> Printf.sprintf "(vdi=%s,content_id=%s)" x.vdi x.content_id) similar_vdis));
+```
+
+As with copy we look locally for similar VDIs. However, rather than use that here we actually pass this information on to the destination SR via the `receive_start` internal SMAPIv2 call:
+
+```ocaml
+    let result_ty = Remote.DATA.MIRROR.receive_start ~dbg ~sr:dest ~vdi_info:local_vdi ~id ~similar:similars in
+    let result = match result_ty with
+        Mirror.Vhd_mirror x -> x
+    in
+```
+
+This gives the destination SR a chance to say what sort of migration it can support. We only support `Vhd_mirror` style migrations which require the destination to support the `compose` SMAPIv2 operation. The type of `x` is a record:
+
+```ocaml
+type mirror_receive_result_vhd_t = {
+	mirror_vdi : vdi_info;
+	mirror_datapath : dp;
+	copy_diffs_from : content_id option;
+	copy_diffs_to : vdi;
+	dummy_vdi : vdi;
+}
+```
+Field descriptions:
+* `mirror_vdi` is the VDI to which new writes should be mirrored.
+* `mirror_datapath` is the remote datapath on which the VDI has been attached and activated. This is required to construct the remote NBD url
+* `copy_diffs_from` represents the source base VDI to be used for the non-mirrored data copy.
+* `copy_diffs_to` is the remote VDI to copy those diffs to
+* `dummy_vdi` exists to prevent leaf-coalesce on the mirror_vdi
+
+```ocaml
+    (* Enable mirroring on the local machine *)
+    let mirror_dp = result.Mirror.mirror_datapath in
+
+    let uri = (Printf.sprintf "/services/SM/nbd/%s/%s/%s" dest result.Mirror.mirror_vdi.vdi mirror_dp) in
+    let dest_url = Http.Url.set_uri remote_url uri in
+    let request = Http.Request.make ~query:(Http.Url.get_query_params dest_url) ~version:"1.0" ~user_agent:"smapiv2" Http.Put uri in
+    let transport = Xmlrpc_client.transport_of_url dest_url in
+```
+This is where we connect to the NBD server on the destination.
+
+
+```ocaml
+    debug "Searching for data path: %s" dp;
+    let attach_info = Local.DP.attach_info ~dbg:"nbd" ~sr ~vdi ~dp in
+    debug "Got it!";
+```
+
+we need the local attach_info to find the local tapdisk so we can send it the connected NBD socket.
+
+```ocaml
+    on_fail := (fun () -> Remote.DATA.MIRROR.receive_cancel ~dbg ~id) :: !on_fail;
+```
+
+This should probably be set directly after the call to `receive_start`
+
+```ocaml
+    let tapdev = match tapdisk_of_attach_info attach_info with
+      | Some tapdev ->
+        debug "Got tapdev";
+        let pid = Tapctl.get_tapdisk_pid tapdev in
+        let path = Printf.sprintf "/var/run/blktap-control/nbdclient%d" pid in
+        with_transport transport (with_http request (fun (response, s) ->
+            debug "Here inside the with_transport";
+            let control_fd = Unix.socket Unix.PF_UNIX Unix.SOCK_STREAM 0 in
+            finally
+              (fun () ->
+                 debug "Connecting to path: %s" path;
+                 Unix.connect control_fd (Unix.ADDR_UNIX path);
+                 let msg = dp in
+                 let len = String.length msg in
+                 let written = Unixext.send_fd control_fd msg 0 len [] s in
+                 debug "Sent fd";
+                 if written <> len then begin
+                   error "Failed to transfer fd to %s" path;
+                   failwith "foo"
+                 end)
+              (fun () ->
+                 Unix.close control_fd)));
+        tapdev
+      | None ->
+        failwith "Not attached"
+    in
+```
+Here we connect to the remote NBD server, then pass that connected fd to the local tapdisk that is using the disk. This fd is passed with a name that is later used to tell tapdisk to start using it - we use the datapath name for this.
+
+```ocaml
+    debug "Adding to active local mirrors: id=%s" id;
+    let alm = State.Send_state.({
+        url;
+        dest_sr=dest;
+        remote_dp=mirror_dp;
+        local_dp=dp;
+        mirror_vdi=result.Mirror.mirror_vdi.vdi;
+        remote_url=url;
+        tapdev;
+        failed=false;
+        watchdog=None}) in
+    State.add id (State.Send_op alm);
+    debug "Added";
+```
+
+As for copy we persist some state to disk to say that we're doing a mirror so we can undo any state changes after a toolstack restart.
+
+```ocaml
+    debug "About to snapshot VDI = %s" (string_of_vdi_info local_vdi);
+    let local_vdi = add_to_sm_config local_vdi "mirror" ("nbd:" ^ dp) in
+    let local_vdi = add_to_sm_config local_vdi "base_mirror" id in
+    let snapshot =
+    try
+      Local.VDI.snapshot ~dbg ~sr ~vdi_info:local_vdi
+    with
+    | Storage_interface.Backend_error(code, _) when code = "SR_BACKEND_FAILURE_44" ->
+      raise (Api_errors.Server_error(Api_errors.sr_source_space_insufficient, [ sr ]))
+    | e ->
+      raise e
+    in
+    debug "Done!";
+
+    SMPERF.debug "mirror.start: snapshot created, mirror initiated vdi:%s snapshot_of:%s"
+      snapshot.vdi local_vdi.vdi ;
+
+    on_fail := (fun () -> Local.VDI.destroy ~dbg ~sr ~vdi:snapshot.vdi) :: !on_fail;
+```
+
+This bit inserts into `sm_config` the name of the fd we passed earlier to do mirroring. This is interpreted by the python SM backends and passed on the `tap-ctl` invocation to unpause the disk. This causes all new writes to be mirrored via NBD to the file descriptor passed earlier.
+
+
+```ocaml
+    begin
+      let rec inner () =
+        debug "tapdisk watchdog";
+        let alm_opt = State.find_active_local_mirror id in
+        match alm_opt with
+        | Some alm ->
+          let stats = Tapctl.stats (Tapctl.create ()) tapdev in
+          if stats.Tapctl.Stats.nbd_mirror_failed = 1 then
+            Updates.add (Dynamic.Mirror id) updates;
+          alm.State.Send_state.watchdog <- Some (Scheduler.one_shot scheduler (Scheduler.Delta 5) "tapdisk_watchdog" inner)
+        | None -> ()
+      in inner ()
+    end;
+```
+
+This is the watchdog that runs `tap-ctl stats` every 5 seconds watching `mirror_failed` for evidence of a failure in the mirroring code. If it detects one the only thing it does is to notify that the state of the mirroring has changed. This will be picked up by the thread in xapi that is monitoring the state of the mirror. It will then issue a `MIRROR.stat` call which will return the state of the mirror including the information that it has failed.
+
+```ocaml
+    on_fail := (fun () -> stop ~dbg ~id) :: !on_fail;
+    (* Copy the snapshot to the remote *)
+    let new_parent = Storage_task.with_subtask task "copy" (fun () ->
+        copy' ~task ~dbg ~sr ~vdi:snapshot.vdi ~url ~dest ~dest_vdi:result.Mirror.copy_diffs_to) |> vdi_info in
+    debug "Local VDI %s == remote VDI %s" snapshot.vdi new_parent.vdi;
+```
+
+This is where we copy the VDI returned by the snapshot invocation to the remote VDI called `copy_diffs_to`. We only copy deltas, but we rely on `copy'` to figure out which disk the deltas should be taken from, which it does via the `content_id` field.
+
+```ocaml
+    Remote.VDI.compose ~dbg ~sr:dest ~vdi1:result.Mirror.copy_diffs_to ~vdi2:result.Mirror.mirror_vdi.vdi;
+    Remote.VDI.remove_from_sm_config ~dbg ~sr:dest ~vdi:result.Mirror.mirror_vdi.vdi ~key:"base_mirror";
+    debug "Local VDI %s now mirrored to remote VDI: %s" local_vdi.vdi result.Mirror.mirror_vdi.vdi;
+```
+
+Once the copy has finished we invoke the `compose` SMAPIv2 call that composes the diffs from the mirror with the base image copied from the snapshot.
+
+```ocaml
+    debug "Destroying dummy VDI %s on remote" result.Mirror.dummy_vdi;
+    Remote.VDI.destroy ~dbg ~sr:dest ~vdi:result.Mirror.dummy_vdi;
+    debug "Destroying snapshot %s on src" snapshot.vdi;
+    Local.VDI.destroy ~dbg ~sr ~vdi:snapshot.vdi;
+
+    Some (Mirror_id id)
+```
+
+we can now destroy the dummy vdi on the remote (which will cause a leaf-coalesce in due course), and we destroy the local snapshot here (which will also cause a leaf-coalesce in due course, providing we don't destroy it first). The return value from the function is the mirror_id that we can use to monitor the state or cancel the mirror.
+
+```ocaml
+  with
+  | Sr_not_attached(sr_uuid) ->
+    error " Caught exception %s:%s. Performing cleanup." Api_errors.sr_not_attached sr_uuid;
+    perform_cleanup_actions !on_fail;
+    raise (Api_errors.Server_error(Api_errors.sr_not_attached,[sr_uuid]))
+  | e ->
+    error "Caught %s: performing cleanup actions" (Api_errors.to_string e);
+    perform_cleanup_actions !on_fail;
+    raise e
+```
+
+The exception handler just cleans up afterwards.
+
+This is not the end of the story, since we need to detach the remote datapath being used for mirroring when we detach this end. The hook function is in [storage_migrate.ml](https://github.com/xapi-project/xen-api/blob/master/ocaml/xapi/storage_migrate.ml#L775-L791):
+
+```ocaml
+let post_detach_hook ~sr ~vdi ~dp =
+  let open State.Send_state in
+  let id = State.mirror_id_of (sr,vdi) in
+  State.find_active_local_mirror id |>
+  Opt.iter (fun r ->
+      let remote_url = Http.Url.of_string r.url in
+      let module Remote = Client(struct let rpc = rpc ~srcstr:"smapiv2" ~dststr:"dst_smapiv2" remote_url end) in
+      let t = Thread.create (fun () ->
+          debug "Calling receive_finalize";
+          log_and_ignore_exn
+            (fun () -> Remote.DATA.MIRROR.receive_finalize ~dbg:"Mirror-cleanup" ~id);
+          debug "Finished calling receive_finalize";
+          State.remove_local_mirror id;
+          debug "Removed active local mirror: %s" id
+        ) () in
+      Opt.iter (fun id -> Scheduler.cancel scheduler id) r.watchdog;
+      debug "Created thread %d to call receive finalize and dp destroy" (Thread.id t))
+```
+
+This removes the persistent state and calls `receive_finalize` on the destination. The body of that functions is:
+
+```ocaml
+let receive_finalize ~dbg ~id =
+  let recv_state = State.find_active_receive_mirror id in
+  let open State.Receive_state in Opt.iter (fun r -> Local.DP.destroy ~dbg ~dp:r.leaf_dp ~allow_leak:false) recv_state;
+  State.remove_receive_mirror id
+```
+
+which removes the persistent state on the destination and destroys the datapath associated with the mirror.
+
+Additionally, there is also a pre-deactivate hook. The rationale for this is that we want to detect any failures to write that occur right at the end of the SXM process. So if there is a mirror operation going on, before we deactivate we wait for tapdisk to flush its queue of outstanding requests, then we query whether there has been a mirror failure. The code is just above the detach hook in [storage_migrate.ml](https://github.com/xapi-project/xen-api/blob/master/ocaml/xapi/storage_migrate.ml#L738-L773):
+
+```ocaml
+let pre_deactivate_hook ~dbg ~dp ~sr ~vdi =
+  let open State.Send_state in
+  let id = State.mirror_id_of (sr,vdi) in
+  let start = Mtime_clock.counter () in
+  let get_delta () = Mtime_clock.count start |> Mtime.Span.to_s in
+  State.find_active_local_mirror id |>
+  Opt.iter (fun s ->
+      try
+        (* We used to pause here and then check the nbd_mirror_failed key. Now, we poll
+				   until the number of outstanding requests has gone to zero, then check the
+				   status. This avoids confusing the backend (CA-128460) *)
+        let open Tapctl in
+        let ctx = create () in
+        let rec wait () =
+          if get_delta () > reqs_outstanding_timeout then raise Timeout;
+          let st = stats ctx s.tapdev in
+          if st.Stats.reqs_outstanding > 0
+          then (Thread.delay 1.0; wait ())
+          else st
+        in
+        let st = wait () in
+        debug "Got final stats after waiting %f seconds" (get_delta ());
+        if st.Stats.nbd_mirror_failed = 1
+        then begin
+          error "tapdisk reports mirroring failed";
+          s.failed <- true
+        end;
+      with
+      | Timeout ->
+        error "Timeout out after %f seconds waiting for tapdisk to complete all outstanding requests" (get_delta ());
+        s.failed <- true
+      | e ->
+        error "Caught exception while finally checking mirror state: %s"
+          (Printexc.to_string e);
+        s.failed <- true
+    )
+```
