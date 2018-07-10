@@ -75,6 +75,34 @@ let create ~__context ~pIF ~cluster_stack ~pool_auto_join ~token_timeout ~token_
         handle_error error
     )
 
+let introduce ~__context ~pIF ~cluster_stack ~pool_auto_join ~token ~uuid ~other_config =
+  assert_cluster_stack_valid ~cluster_stack;
+
+  (* Currently we only support corosync. If we support more cluster stacks, this
+   * should be replaced by a general function that checks the given cluster_stack *)
+  Pool_features.assert_enabled ~__context ~f:Features.Corosync;
+  let cluster_ref = Ref.make () in
+  let host = Helpers.get_master ~__context in
+  with_clustering_lock __LOC__(fun () ->
+      let cluster_uuid = uuid in
+
+  
+      let pifrec = Db.PIF.get_record ~__context ~self:pIF in
+      assert_pif_prerequisites (pIF,pifrec);
+      let cluster_token = token in
+
+      Db.Cluster.create ~__context ~ref:cluster_ref ~uuid:cluster_uuid ~cluster_token ~cluster_stack ~pending_forget:[]
+        ~pool_auto_join ~token_timeout:0.0 ~token_timeout_coefficient:0.0 ~current_operations:[] ~allowed_operations:[] ~cluster_config:[]
+        ~other_config;
+  );
+
+  let cluster_host_ref = Xapi_cluster_host.create ~__context ~cluster:cluster_ref ~host ~pif:pIF in
+
+  D.debug "Created Cluster: %s and cluster_host: %s" (Ref.string_of cluster_ref) (Ref.string_of cluster_host_ref);
+  set_ha_cluster_stack ~__context;
+  cluster_ref
+
+
 let destroy ~__context ~self =
   let cluster_hosts = Db.Cluster.get_cluster_hosts ~__context ~self in
   let cluster_host = match cluster_hosts with

@@ -82,6 +82,9 @@ let join_internal ~__context ~self =
             else None
           with _ -> None
         ) (Db.Cluster.get_cluster_hosts ~__context ~self:cluster) in
+      let other_ips_str = Db.Cluster.get_other_config ~__context ~self:cluster |> List.assoc "extra_ips" in
+      let other_ips = Xapi_stdext_std.Xstringext.String.split ',' other_ips_str |> List.map (fun x -> Cluster_interface.IPv4 x) in
+      let ip_list = other_ips @ ip_list in
       if ip_list = [] then
         raise Api_errors.(Server_error (no_cluster_hosts_reachable, [Ref.string_of cluster]));
 
@@ -253,17 +256,17 @@ let disable_clustering ~__context =
 let sync_required ~__context ~host =
   let clusters = Db.Cluster.get_all_records ~__context in
   match clusters with
-  | [] -> None
+  | [] -> debug "No clusters!"; None
   | [cluster_ref, cluster_rec] -> begin
       let expr = Db_filter_types.(And (Eq (Field "host", Literal (Ref.string_of host)),
                                        Eq (Field "cluster", Literal (Ref.string_of cluster_ref)))) in
       let my_cluster_hosts = Db.Cluster_host.get_internal_records_where ~__context ~expr in
       match my_cluster_hosts with
-      | [(_ref,_rec)] -> None
+      | [(_ref,_rec)] -> debug "Got a cluster_host already"; None
       | [] ->
         if cluster_rec.API.cluster_pool_auto_join
         then Some cluster_ref
-        else None
+        else (debug "pool_auto_join is false"; None)
       | _ -> raise Api_errors.(Server_error (internal_error, [ "Host cannot be associated with more than one cluster_host"; Ref.string_of host ]))
     end
   | _ -> raise Api_errors.(Server_error (internal_error, ["Cannot have more than one Cluster object per pool currently"]))
@@ -272,6 +275,7 @@ let sync_required ~__context ~host =
 let create_as_necessary ~__context ~host =
   match sync_required ~__context ~host with
   | Some cluster -> (* assume pool autojoin set *)
+    debug "Need to create something";
     let network = get_network_internal ~__context ~self:cluster in
     let pIF,_ = Xapi_clustering.pif_of_host ~__context network host in
     create_internal ~__context ~cluster ~host ~pIF |> ignore

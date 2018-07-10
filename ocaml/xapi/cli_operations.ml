@@ -5015,6 +5015,18 @@ module Cluster = struct
     let uuid = Client.Cluster.get_uuid ~rpc ~session_id ~self:cluster in
     printer (Cli_printer.PList [uuid])
 
+  let introduce printer rpc session_id params =
+    let pif_uuid = List.assoc "pif-uuid" params in
+    let pIF = Client.PIF.get_by_uuid rpc session_id pif_uuid in
+    let cluster_stack = get_param params "cluster-stack" ~default:Constants.default_smapiv3_cluster_stack in
+    let pool_auto_join = get_bool_param params "pool-auto-join" ~default:true in
+    let token = List.assoc "token" params in
+    let uuid = List.assoc "uuid" params in
+    let other_config = read_map_params "other-config" params in
+    let cluster = Client.Cluster.introduce ~rpc ~session_id ~pIF ~cluster_stack ~pool_auto_join ~token ~uuid ~other_config in
+    let uuid = Client.Cluster.get_uuid ~rpc ~session_id ~self:cluster in
+    printer (Cli_printer.PList [uuid])
+
   let destroy printer rpc session_id params =
     let uuid = List.assoc "uuid" params in
     let ref = Client.Cluster.get_by_uuid rpc session_id uuid in

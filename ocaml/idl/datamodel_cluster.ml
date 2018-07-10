@@ -71,6 +71,57 @@ let create = call
                       ])
     ()
 
+let introduce = call
+    ~name:"introduce"
+    ~doc:"Introduces a Cluster object representing a pre-made cluster and one Cluster_host object as its first member"
+    ~result:(Ref _cluster, "the new Cluster")
+    ~versioned_params:
+      ([{param_type=(Ref _pif);
+         param_name="PIF";
+         param_doc="The PIF to connect the cluster's first cluster_host to";
+         param_release=lima_release;
+         param_default=None};
+
+        {param_type=String;
+         param_name="cluster_stack";
+         param_doc="simply the string 'corosync'. No other cluster stacks are currently supported";
+         param_release=lima_release;
+         param_default=None};
+
+        {param_type=Bool;
+         param_name="pool_auto_join";
+         param_doc="true if xapi is automatically joining new pool members to the cluster";
+         param_release=lima_release;
+         param_default=None};
+
+        {param_type=String;
+         param_name="token";
+         param_doc="The token of the cluster";
+         param_release=lima_release;
+         param_default=None};
+
+        {param_type=String;
+         param_name="uuid";
+         param_doc="The UUID of the cluster";
+         param_release=lima_release;
+         param_default=None;};
+
+         {param_type=Map (String, String);
+         param_name="other_config";
+         param_doc="Other config";
+         param_release=lima_release;
+         param_default=None}
+
+       ])
+    ~lifecycle
+    ~allowed_roles:_R_POOL_ADMIN
+    ~errs:Api_errors.([ invalid_cluster_stack
+                      ; invalid_value
+                      ; pif_allows_unplug
+                      ; required_pif_is_unplugged
+                      ])
+    ()
+
 let destroy = call
     ~name:"destroy"
     ~doc:"Destroys a Cluster object and the one remaining Cluster_host member"
@@ -210,6 +261,7 @@ let t =
       ])
     ~messages:
       [ create
+      ; introduce
       ; destroy
       ; get_network
       ; pool_create

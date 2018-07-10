@@ -4318,6 +4318,16 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
            cluster
         )
 
+    let introduce ~__context ~pIF ~cluster_stack ~pool_auto_join ~token ~uuid ~other_config =
+      info "Cluster.introduce";
+      let pool = Helpers.get_pool ~__context in (* assumes 1 pool in DB *)
+      Xapi_pool_helpers.with_pool_operation ~__context ~self:pool ~doc:"Cluster.introduce" ~op:`cluster_create
+        (fun () ->
+           let cluster = Local.Cluster.introduce ~__context ~pIF ~cluster_stack ~pool_auto_join ~token ~uuid ~other_config in
+           Xapi_cluster_helpers.update_allowed_operations ~__context ~self:cluster;
+           cluster
+        )
+
     let destroy ~__context ~self =
       info "Cluster.destroy cluster: %s" (Ref.string_of self);
       Xapi_cluster_helpers.with_cluster_operation ~__context ~self ~doc:"Cluster.destroy" ~op:`destroy

@@ -2947,6 +2947,15 @@ add a mapping of 'path' -> '/tmp', the command line should contain the argument 
       implementation=No_fd Cli_operations.Cluster.create;
       flags=[Hidden];
     };
+    "cluster-introduce",
+    {
+      reqd=["pif-uuid"; "uuid"; "token"];
+      optn=["cluster-stack";"pool-auto-join"];
+      help="Introduce a pre-existing cluster with master as first member";
+      implementation=No_fd Cli_operations.Cluster.introduce;
+      flags=[Hidden];
+    };
+
     "cluster-destroy",
     {
       reqd=["uuid"];

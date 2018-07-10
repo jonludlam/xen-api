@@ -25,6 +25,10 @@ val create : __context:Context.t ->
  *   ~token_timeout_coefficient] is the implementation of the XenAPI method
  *   'Cluster.create'. It is the constructor of the Cluster object. *)
 
+val introduce : __context:Context.t ->
+  pIF:API.ref_PIF -> cluster_stack:string -> pool_auto_join:bool ->
+  token:string -> uuid:string -> other_config:((string * string) list) -> API.ref_Cluster
+
 val destroy : __context:Context.t -> self:API.ref_Cluster -> unit
 (** [destroy ~__context ~self] is the implementation of the XenAPI method
     'Cluster.destroy'. It is the destructor of the Cluster object *)
