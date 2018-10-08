@@ -77,9 +77,9 @@ let get_deleted ~__context ~token db =
   let tables =
     let all =
       let objs = List.filter (fun x -> x.Datamodel_types.gen_events) (Dm_api.objects_of_api Datamodel.all_api) in
-      List.map (fun x->x.Datamodel_types.name) objs in
+      List.rev (List.rev_map (fun x->x.Datamodel_types.name) objs) in
     List.filter (fun table -> true) all in
-  List.concat (List.map (get_del_from_table_name token (Database.tableset db)) tables)
+  List.concat (List.rev (List.rev_map (get_del_from_table_name token (Database.tableset db)) tables))
 
 let check_for_updates token db =
   let ts = Database.tableset db in
@@ -160,7 +160,7 @@ let counter db table =
 
 let object_count db =
   let tables = get_table_list db in
-  List.map (counter db) tables
+  List.rev (List.rev_map (counter db) tables)
 
 let count_eq_check c1 c2 =
   c1.tblname = c2.tblname && c1.count = c2.count && c1.del = c2.del
@@ -175,11 +175,6 @@ let apply_changes (delta:delta) __context =
   (* Need to check that we haven't missed anything *)
   if not (List.for_all2 count_eq_check (object_count !Xapi_slave_db.slave_db) (object_count (Db_ref.get_database (Context.database_of __context)))) then
     Mutex.execute Xapi_slave_db.slave_db_mutex (fun () -> Xapi_slave_db.slave_db := Db_cache_types.Database.set_generation 0L !Xapi_slave_db.slave_db)
-
-let _info_extract (tlist:table list) =
-  let tbls = List.map (fun (i:table) -> i.tblname) tlist in
-  let rows = List.concat (List.map (fun tbl -> List.map (fun row -> row.objref) tbl.value) tlist) in
-  List.concat (List.map ((fun objlist tblname -> List.combine [tblname] objlist) rows) tbls)
 
 let fl tblname rlist =
   List.fold_left (fun acc r -> [{tbl=tblname; row=r.objref}] @ acc) [] rlist
