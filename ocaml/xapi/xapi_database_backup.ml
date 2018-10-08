@@ -7,17 +7,57 @@ open Db_cache_types
 open Stdext
 open Threadext
 
-type stat = {created : int64; modified : int64; deleted : int64;} [@@deriving rpc]
-type field = {fldname : string; stat : stat; value : Schema.Value.t;} [@@deriving rpc]
-type row = {objref  : string; stat : stat; value : field list;} [@@deriving rpc]
-type table = {tblname : string; stat : stat; value : row list;} [@@deriving rpc]
+type stat =
+  { created :  int64
+  ; modified : int64
+  ; deleted :  int64
+  } [@@deriving rpc]
 
-type del_tables = {key: string; table: string; stat : stat;} [@@deriving rpc]
-type delta = {fresh_token: int64; tables : table list; deletes : del_tables list;} [@@deriving rpc]
-type edits = {ts : TableSet.t; tables : string list}
+type field =
+  { fldname : string
+  ; stat :    stat
+  ; value :   Schema.Value.t
+  } [@@deriving rpc]
 
-type count = {tblname:string; count: int; del:int;}
-type pair = {tbl:string; row:string;}
+type row =
+  { objref : string
+  ; stat :   stat
+  ; value :  field list
+  } [@@deriving rpc]
+
+type table =
+  { tblname : string
+  ; stat :    stat
+  ; value :   row list
+  } [@@deriving rpc]
+
+type del_tables =
+  { key:   string
+  ; table: string
+  ; stat : stat
+  } [@@deriving rpc]
+
+type delta =
+  { fresh_token: int64
+  ; tables :     table list
+  ; deletes :    del_tables list
+  } [@@deriving rpc]
+
+type edits =
+  { ts :     TableSet.t
+  ; tables : string list
+  }
+
+type count =
+  { tblname:string
+  ; count:  int
+  ; del:    int
+  }
+
+type pair =
+  { tbl: string
+  ; row: string
+  }
 
 let empty_schema = Schema.Value.unmarshal String ""
 let empty_field = {fldname=""; stat={created=0L;modified=0L;deleted=0L;}; value=empty_schema;}
@@ -52,8 +92,8 @@ let check_for_updates token db =
 
 let get_delta ~__context ~token =
   let db = Db_ref.get_database (Context.database_of __context) in
-  let db_access =
-    fun () -> Mutex.execute Db_lock.dbcache_mutex (fun () ->
+  let db_access = fun () ->
+    Mutex.execute Db_lock.dbcache_mutex (fun () ->
         {fresh_token=Manifest.generation (Database.manifest db);
          tables=(check_for_updates token db);
          deletes=(get_deleted __context token db)})

@@ -12,7 +12,7 @@ let clear_db () =
 
 let update_context_db (__context:Context.t) =
   if Pool_role.is_slave () then
-    Context.set_database __context (Db_ref.in_memory (ref slave_db))
+    Context.update_database __context (Db_ref.in_memory (ref slave_db))
   else
     __context
 

@@ -324,6 +324,7 @@ module Configuration = struct
 
   let watch_other_configs ~__context delay =
     let loop (token, was_in_rpu) =
+      let __context = Xapi_slave_db.update_context_db __context in
       Helpers.call_api_functions ~__context (fun rpc session_id ->
           let events =
             Client.Client.Event.from rpc session_id ["host"; "pool"] token delay |>

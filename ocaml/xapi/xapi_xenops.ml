@@ -2405,6 +2405,7 @@ let events_from_xapi () =
                   let api_timeout = 60. in
                   let timeout = 30. +. api_timeout +. !Db_globs.master_connection_reset_timeout in
                   let timebox_rpc = Helpers.make_timeboxed_rpc ~__context timeout in
+                  let __context = Xapi_slave_db.update_context_db __context in
                   let from =
                     try
                       XenAPI.Event.from

@@ -77,8 +77,8 @@ val get_origin : t -> string
 (** [database_of __context] returns a database handle, which can be used by Db.* *)
 val database_of : t -> Db_ref.t
 
-(** [set_database __context database] returns a context, with a newly updated Db_ref **)
-val set_database : t -> Db_ref.t -> t
+(** [update_database __context database] returns a context, with a newly updated Db_ref **)
+val update_database : t -> Db_ref.t -> t
 
 (** {6 Destructors} *)
 

@@ -609,6 +609,7 @@ let wait_for_vbds_to_be_unplugged_and_destroyed ~__context ~self ~timeout =
     in
 
     let from =
+      let __context = Xapi_slave_db.update_context_db __context in
       Helpers.call_api_functions ~__context
         (fun rpc session_id ->
            Client.Event.from ~rpc ~session_id ~classes ~token ~timeout |> Event_types.event_from_of_rpc)

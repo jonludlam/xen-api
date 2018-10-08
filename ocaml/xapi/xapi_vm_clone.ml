@@ -32,6 +32,7 @@ let delete_disks rpc session_id disks =
     ) disks
 
 let wait_for_subtask ?progress_minmax ~__context task =
+  let __context = Xapi_slave_db.update_context_db __context in
   Helpers.call_api_functions ~__context (fun rpc session ->
       let refresh_session = Xapi_session.consider_touching_session rpc session in
       let main_task = Context.get_task_id __context in

@@ -65,7 +65,7 @@ let get_origin ctx =
 
 let database_of x = x.database
 
-let set_database x db =
+let update_database x db =
   {x with database = db}
 
 (** Calls coming in from the unix socket are pre-authenticated *)
