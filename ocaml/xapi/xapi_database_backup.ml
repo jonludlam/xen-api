@@ -191,9 +191,16 @@ let handle_notifications __context (d:delta) =
   List.iter ((fun __context (d:del_tables) -> send_notification __context "del" {tbl=d.table; row=d.key}) __context) d.deletes;
   List.iter (send_notification __context "mod") (info_extract d.tables)
 
+let write_db_to_disk =
+  debug "Writing slave db to slave disk";
+  Db_cache_impl.sync (Db_conn_store.read_db_connections ()) !Xapi_slave_db.slave_db
+
 let endless_loop ~__context () =
   let uri = Constants.database_backup_uri in
+  let delay_f = 300.0 in
+  let start = Mtime_clock.counter () in
   while (true) do
+    let now = Mtime_clock.count start in
     let addr = Pool_role.get_master_address() in
     let psec = !Xapi_globs.pool_secret in
     let token_str = Int64.to_string (Manifest.generation (Database.manifest !Xapi_slave_db.slave_db)) in
@@ -209,6 +216,7 @@ let endless_loop ~__context () =
             let delta_change = delta_of_rpc (Jsonrpc.of_string res) in
             apply_changes delta_change __context;
             handle_notifications __context delta_change;
+            if Mtime.Span.to_s now > delay_f then write_db_to_disk;
          )
       )
   done
