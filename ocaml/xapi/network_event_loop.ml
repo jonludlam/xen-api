@@ -29,6 +29,7 @@ let _watch_networks_for_nbd_changes __context ~update_firewall ~wait_after_event
 
   let wait_for_network_change ~token =
     let from =
+      let __context = Xapi_slave_db.update_context_db __context in
       Helpers.call_api_functions ~__context
         (fun rpc session_id ->
            Client.Client.Event.from ~rpc ~session_id ~classes ~token ~timeout |> Event_types.event_from_of_rpc)

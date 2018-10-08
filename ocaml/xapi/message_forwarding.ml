@@ -698,6 +698,7 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
         let unfinished = List.exists (fun state -> state = `pending) statuses in
         if unfinished
         then begin
+          let __context = Xapi_slave_db.update_context_db __context in
           let from = Helpers.call_api_functions ~__context
               (fun rpc session_id -> Client.Event.from ~rpc ~session_id ~classes ~token ~timeout:30.0) in
           debug "Using events to wait for tasks: %s" (String.concat "," classes);
