@@ -65,6 +65,9 @@ let get_origin ctx =
 
 let database_of x = x.database
 
+let set_database x db =
+  {x with database = db}
+
 (** Calls coming in from the unix socket are pre-authenticated *)
 let is_unix_socket s =
   match Unix.getpeername s with

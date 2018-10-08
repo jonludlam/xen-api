@@ -637,6 +637,7 @@ let common_http_handlers = [
   ("post_json_options", (Http_svr.BufIO (Api_server.options_callback)));
   ("post_jsonrpc_options", (Http_svr.BufIO (Api_server.options_callback)));
   ("get_pool_update_download", (Http_svr.FdIO Xapi_pool_update.pool_update_download_handler));
+  ("database_backup", (Http_svr.FdIO Xapi_database_backup.handler));
 ]
 
 let listen_unix_socket sock_path =
@@ -933,6 +934,7 @@ let server_init() =
           "Starting SR physical utilisation scanning", [Startup.OnThread], (Xapi_sr.physical_utilisation_thread ~__context);
           "Caching metadata VDIs created by foreign pools.", [ Startup.OnlyMaster; ], cache_metadata_vdis;
           "Stats reporting thread", [], Xapi_stats.start;
+          "Slave database backup", [ Startup.OnlySlave; Startup.OnThread; ], (Xapi_database_backup.endless_loop ~__context);
         ];
 
         if !debug_dummy_data then (
