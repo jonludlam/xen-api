@@ -662,6 +662,8 @@ let vm_call_plugin_interval = ref 10.
 
 let nowatchdog = ref false
 
+let slave_dbs = ref true
+
 let log_getter = ref false
 
 (* Path to the pool configuration file. *)
@@ -888,6 +890,9 @@ let other_options = [
 
   "nowatchdog", Arg.Set nowatchdog,
   (fun () -> string_of_bool !nowatchdog), "turn watchdog off, avoiding initial fork";
+
+  "slave_dbs", Arg.Set slave_dbs,
+  (fun () -> string_of_bool !slave_dbs), "Enable/Disable for slave database backup";
 
   "log-getter", Arg.Set log_getter,
   (fun () -> string_of_bool !log_getter), "Enable/Disable logging for getters";
