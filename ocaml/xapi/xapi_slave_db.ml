@@ -16,3 +16,6 @@ let update_context_db (__context:Context.t) =
   else
     __context
 
+let call_with_updated_context_db (__context:Context.t) f =
+  let __context = update_context_db __context in
+  f ~__context

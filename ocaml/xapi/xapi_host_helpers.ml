@@ -324,12 +324,9 @@ module Configuration = struct
 
   let watch_other_configs ~__context delay =
     let loop (token, was_in_rpu) =
-      let __context = Xapi_slave_db.update_context_db __context in
       Helpers.call_api_functions ~__context (fun rpc session_id ->
-          let events =
-            Client.Client.Event.from rpc session_id ["host"; "pool"] token delay |>
-            Event_types.event_from_of_rpc
-          in
+          let events = Event_types.parse_event_from
+              (Xapi_slave_db.call_with_updated_context_db __context (Xapi_event.from ~classes:["host"; "pool"] ~token ~timeout:delay)) in
           let check_host (host_ref,host_rec) =
             let oc = host_rec.API.host_other_config in
             let iscsi_iqn = try Some (List.assoc "iscsi_iqn" oc) with _ -> None in

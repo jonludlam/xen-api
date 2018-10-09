@@ -467,7 +467,7 @@ let from_inner __context session subs from from_t deadline =
     with_call session subs
       (fun sub ->
          let rec grab_nonempty_range () =
-           let (msg_gen, messages, tableset, (creates,mods,deletes,last)) as result = Db_lock.with_lock (fun () -> grab_range (Db_backend.make ())) in
+           let (msg_gen, messages, tableset, (creates,mods,deletes,last)) as result = Db_lock.with_lock (fun () -> grab_range (Context.database_of __context)) in
            if creates = [] && mods = [] && deletes = [] && messages = [] && Unix.gettimeofday () < deadline then begin
              last_generation := last; (* Cur_id was bumped, but nothing relevent fell out of the db. Therefore the *)
              sub.cur_id <- last; (* last id the client got is equivalent to the current one *)

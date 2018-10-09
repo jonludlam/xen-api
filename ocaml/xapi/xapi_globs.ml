@@ -664,6 +664,8 @@ let nowatchdog = ref false
 
 let slave_dbs = ref true
 
+let slave_db_writeout_time = ref 300.0
+
 let log_getter = ref false
 
 (* Path to the pool configuration file. *)
@@ -893,6 +895,9 @@ let other_options = [
 
   "slave_dbs", Arg.Set slave_dbs,
   (fun () -> string_of_bool !slave_dbs), "Enable/Disable for slave database backup";
+
+  "slave_db_writeout_time", Arg.Set_float slave_db_writeout_time,
+  (fun () -> string_of_float !slave_db_writeout_time), "Configure the length of time between writing the slave database to disk";
 
   "log-getter", Arg.Set log_getter,
   (fun () -> string_of_bool !log_getter), "Enable/Disable logging for getters";

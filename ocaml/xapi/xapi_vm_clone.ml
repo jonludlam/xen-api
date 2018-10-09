@@ -79,11 +79,11 @@ let wait_for_subtask ?progress_minmax ~__context task =
 
       (* Watch for events relating to the VDI copy sub-task and the over-arching task *)
       while not !finished do
-        let events = Client.Event.from rpc session
-            [Printf.sprintf "task/%s" (Ref.string_of task);
-             Printf.sprintf "task/%s" (Ref.string_of main_task)]
-            !token 30. |> Event_types.event_from_of_rpc in
-        token := events.token;
+        let timeout = 30. in
+        let classes = [Printf.sprintf "task/%s" (Ref.string_of task);
+             Printf.sprintf "task/%s" (Ref.string_of main_task)] in
+        let events = Event_types.parse_event_from
+        (Xapi_slave_db.call_with_updated_context_db __context (Xapi_event.from ~classes ~token:!token ~timeout)) in
         refresh_session ();
         let checkevent ev =
           match Event_helper.record_of_event ev with

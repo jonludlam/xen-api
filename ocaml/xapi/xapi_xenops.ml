@@ -2403,17 +2403,10 @@ let events_from_xapi () =
 
                 while true do
                   let api_timeout = 60. in
-                  let timeout = 30. +. api_timeout +. !Db_globs.master_connection_reset_timeout in
-                  let timebox_rpc = Helpers.make_timeboxed_rpc ~__context timeout in
-                  let __context = Xapi_slave_db.update_context_db __context in
                   let from =
                     try
-                      XenAPI.Event.from
-                        ~rpc:timebox_rpc
-                        ~session_id ~classes
-                        ~token:!token
-                        ~timeout:api_timeout
-                      |> event_from_of_rpc
+                      Event_types.parse_event_from
+                      (Xapi_slave_db.call_with_updated_context_db __context (Xapi_event.from ~classes ~token:!token ~timeout:api_timeout))
                     with e ->
                       Debug.log_backtrace e (Backtrace.get e);
                       raise e

@@ -78,7 +78,7 @@ let test_db_backup () =
   let __context = make_test_database () in
   let init_db = Db_ref.get_database (Context.database_of __context) in
 
-  let changes = Xapi_database_backup.get_delta ~__context:__context ~token:(-2L) in
+  let changes = Xapi_database_backup.get_delta __context (-2L) in
   Xapi_database_backup.apply_changes changes __context;
   let changes_db = !(Xapi_slave_db.slave_db) in
 
@@ -105,7 +105,7 @@ let test_db_with_vm () =
   let (_vm_ref: API.ref_VM) = make_vm __context () in
 
   let init_db = Db_ref.get_database (Context.database_of __context) in
-  let changes = Xapi_database_backup.get_delta ~__context:__context ~token:(-2L) in
+  let changes = Xapi_database_backup.get_delta __context (-2L) in
   Xapi_database_backup.apply_changes changes __context;
   let changes_db = !(Xapi_slave_db.slave_db) in
 
@@ -124,7 +124,7 @@ let test_db_with_name_change () =
   let vm = make_vm __context () in
   Db.VM.set_name_description __context vm "NewName";
   let init_db = Db_ref.get_database (Context.database_of __context) in
-  let changes = Xapi_database_backup.get_delta ~__context:__context ~token:(-2L) in
+  let changes = Xapi_database_backup.get_delta __context (-2L) in
   Xapi_database_backup.apply_changes changes __context;
   let changes_db = !(Xapi_slave_db.slave_db) in
 
@@ -142,7 +142,7 @@ let test_db_with_multiple_changes () =
   let vm = make_vm __context () in
   Db.VM.set_name_description __context vm "NewName1";
   let init_db = Db_ref.get_database (Context.database_of __context) in
-  let changes = Xapi_database_backup.get_delta ~__context:__context ~token:(-2L) in
+  let changes = Xapi_database_backup.get_delta __context (-2L) in
   Xapi_database_backup.apply_changes changes __context;
   let changes_db = !(Xapi_slave_db.slave_db) in
 
@@ -152,7 +152,7 @@ let test_db_with_multiple_changes () =
   let vm2 = make_vm __context () in
   Db.VM.set_name_description __context vm2 "NewName2";
   let init_db = Db_ref.get_database (Context.database_of __context) in
-  let changes = Xapi_database_backup.get_delta ~__context:__context ~token:(-2L) in
+  let changes = Xapi_database_backup.get_delta __context (-2L) in
   Xapi_database_backup.apply_changes changes __context;
   let changes_db = !(Xapi_slave_db.slave_db) in
 
@@ -162,7 +162,7 @@ let test_db_with_multiple_changes () =
   let vm3 = make_vm __context () in
   Db.VM.set_name_description __context vm3 "NewName3";
   let init_db = Db_ref.get_database (Context.database_of __context) in
-  let changes = Xapi_database_backup.get_delta ~__context:__context ~token:(-2L) in
+  let changes = Xapi_database_backup.get_delta __context (-2L) in
   Xapi_database_backup.apply_changes changes __context;
   let changes_db = !(Xapi_slave_db.slave_db) in
 

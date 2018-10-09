@@ -607,13 +607,7 @@ let wait_for_vbds_to_be_unplugged_and_destroyed ~__context ~self ~timeout =
            vdi.API.vDI_VBDs)
         most_recent_snapshot
     in
-
-    let from =
-      let __context = Xapi_slave_db.update_context_db __context in
-      Helpers.call_api_functions ~__context
-        (fun rpc session_id ->
-           Client.Event.from ~rpc ~session_id ~classes ~token ~timeout |> Event_types.event_from_of_rpc)
-    in
+    let from = Event_types.parse_event_from (Xapi_slave_db.call_with_updated_context_db __context (Xapi_event.from ~classes ~token ~timeout)) in
     List.iter (fun event -> debug "wait_for_vbds_to_be_unplugged_and_destroyed: got event %s" (Event_types.string_of_event event)) from.Event_types.events;
     (from.Event_types.token, most_recent_vbds_field from.Event_types.events)
   in

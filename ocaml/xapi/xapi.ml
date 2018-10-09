@@ -890,6 +890,7 @@ let server_init() =
 
     Server_helpers.exec_with_new_task "server_init" ~task_in_database:true (fun __context ->
         Startup.run ~__context [
+          "Slave database backup", [ Startup.OnlySlave; Startup.OnThread; ], (Xapi_database_backup.slave_db_backup_loop ~__context);
           "Checking emergency network reset", [], check_network_reset;
           "Upgrade bonds to Boston", [Startup.NoExnRaising], Sync_networking.fix_bonds ~__context;
           "Reconfig (from DB) for incoming/outgoing stunnel instances", [], set_stunnel_legacy_db ~__context;
@@ -934,7 +935,6 @@ let server_init() =
           "Starting SR physical utilisation scanning", [Startup.OnThread], (Xapi_sr.physical_utilisation_thread ~__context);
           "Caching metadata VDIs created by foreign pools.", [ Startup.OnlyMaster; ], cache_metadata_vdis;
           "Stats reporting thread", [], Xapi_stats.start;
-          "Slave database backup", [ Startup.OnlySlave; Startup.OnThread; ], (Xapi_database_backup.endless_loop ~__context);
         ];
 
         if !debug_dummy_data then (
