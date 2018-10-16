@@ -59,6 +59,14 @@ type pair =
   ; row: string
   }
 
+type update =
+  { mtime: int64
+  ; tblname:string
+  ; objref:string
+  ; fldname:string
+  ; value:Schema.Value.t
+  }
+
 exception Content_length_required
 
 let delta_to_string (d:delta) = Jsonrpc.to_string (rpc_of_delta d)
@@ -109,6 +117,7 @@ let handler (req: Request.t) s _ =
         |> Http_svr.response_str req s
       )
   with Not_found -> debug "No valid token found in request"
+
 (* Slave Functions *)
 
 let send_notification (c:Context.t) reason p =
@@ -118,43 +127,17 @@ let send_notification (c:Context.t) reason p =
     | Some record -> Db_action_helper.events_notify ~snapshot:record p.tbl reason p.row;
   end
 
-let apply_deletes __context (deletes:del_tables list) =
-  List.iter
-    (fun dtbl ->
-       (fun tblname objref ->
-          if Db_cache_impl.is_valid_ref (Context.database_of __context) objref then
-            Xapi_slave_db.slave_db := Db_cache_types.remove_row tblname objref !Xapi_slave_db.slave_db
-          else
-            debug "Not valid ref"
-       ) dtbl.table dtbl.key
-    ) deletes
-
 let make_change mtime tblname objref fldname newval =
-  Xapi_slave_db.slave_db :=
     Database.update (
       (fun _ -> newval)
       |> Row.update mtime fldname newval
       |> Table.update mtime objref Row.empty
-      |> TableSet.update mtime tblname Table.empty) !Xapi_slave_db.slave_db
+      |> TableSet.update mtime tblname Table.empty)
 
 let make_empty_table mtime tblname =
-  Xapi_slave_db.slave_db :=
-    Database.update (fun _ ->
-        TableSet.update mtime tblname Table.empty
-          (fun _ -> Table.empty) (Db_cache_types.Database.tableset !Xapi_slave_db.slave_db))
-      !Xapi_slave_db.slave_db
-
-let unpack_row (table:table) tblname row =
-  List.iter (fun (f:field)->
-      Mutex.execute Xapi_slave_db.slave_db_mutex
-        (fun () -> make_change f.stat.modified tblname row.objref f.fldname f.value)
-    ) row.fields
-
-let apply_updates (t:table) =
-  if t.rows = [] then
-    make_empty_table t.stat.modified t.tblname
-  else
-    List.iter (unpack_row t t.tblname) t.rows
+  Database.update (
+  (fun _ -> Table.empty)
+    |> TableSet.update mtime tblname Table.empty)
 
 let get_table_list db =
   Db_cache_types.TableSet.fold_over_recent (-2L) (fun table stat value acc -> table::acc) (Db_cache_types.Database.tableset db) []
@@ -167,22 +150,56 @@ let object_count db =
   let tables = get_table_list db in
   List.rev (List.rev_map (counter db) tables)
 
-let count_eq_check c1 c2 =
+let count_eq_check (c1:count) (c2:count) =
   c1.tblname = c2.tblname && c1.count = c2.count && c1.del = c2.del
+
+let count_check (c1_list: count list) (c2_list: count list) =
+  if List.length c1_list = List.length c2_list then
+    List.for_all2 count_eq_check c1_list c2_list
+  else
+    raise Content_length_required
+
+let flat_row_list update (rlist:row list) =
+  match rlist with
+  | [] -> [update]
+  | _ -> List.fold_left (fun acc (r:row) ->
+      (List.map (fun (f:field) -> {update with mtime=f.stat.modified; objref=r.objref; fldname=f.fldname; value=f.value;}) r.fields) @ acc) [] rlist
+
+let flatten_table_to_update (tbllist:table list) =
+  List.concat (List.map (fun (t:table) ->
+      (flat_row_list ({mtime=t.stat.modified; tblname=t.tblname; objref=""; fldname=""; value=Schema.Value.String "";})) t.rows) tbllist)
+
+let make_change_with_db_reply (update:update) =
+  match update.fldname with
+  | "" -> make_empty_table update.mtime update.tblname
+  | _ -> make_change update.mtime update.tblname update.objref update.fldname update.value
+
+let make_delete_with_db_reply __context delete db =
+  if Db_cache_impl.is_valid_ref (Context.database_of __context) delete.key then
+    Db_cache_types.remove_row delete.table delete.key db
+  else
+    begin
+      debug "Not valid ref";
+      db
+    end
 
 let apply_changes (delta:delta) __context =
   if (Db_cache_types.Manifest.generation (Db_cache_types.Database.manifest !Xapi_slave_db.slave_db)) < delta.fresh_token then
     begin
-      Xapi_slave_db.slave_db := Database.set_generation delta.fresh_token !Xapi_slave_db.slave_db;
-      List.iter apply_updates delta.tables;
-      apply_deletes __context delta.deletes;
+      let new_db =
+        !Xapi_slave_db.slave_db
+        |> Database.set_generation delta.fresh_token
+        |> List.fold_right make_change_with_db_reply (flatten_table_to_update delta.tables)
+        |> List.fold_right (make_delete_with_db_reply __context) delta.deletes
+      in
+      Xapi_slave_db.slave_db := new_db;
     end;
   (* Need to check that we haven't missed anything *)
-  if not (List.for_all2 count_eq_check (object_count !Xapi_slave_db.slave_db) (object_count (Db_ref.get_database (Context.database_of __context)))) then
-    Mutex.execute Xapi_slave_db.slave_db_mutex (fun () -> Xapi_slave_db.slave_db := Db_cache_types.Database.set_generation 0L !Xapi_slave_db.slave_db)
+  if not (count_check (object_count !Xapi_slave_db.slave_db) (object_count (Db_ref.get_database (Context.database_of __context)))) then
+    Xapi_slave_db.slave_db := Db_cache_types.Database.set_generation 0L !Xapi_slave_db.slave_db
 
-let fl tblname rlist =
-  List.fold_left (fun acc r -> [{tbl=tblname; row=r.objref}] @ acc) [] rlist
+let fl tblname (rlist:row list) =
+  List.fold_left (fun acc (r:row) -> [{tbl=tblname; row=r.objref}] @ acc) [] rlist
 
 let info_extract (tlist:table list) =
   List.fold_left (fun pl (t:table) -> (fl t.tblname t.rows) @ pl) [] tlist
@@ -194,7 +211,7 @@ let handle_notifications __context (d:delta) =
 let write_db_to_disk =
   if !Xapi_globs.slave_dbs then
     debug "Writing slave db to slave disk";
-  Db_cache_impl.sync (Db_conn_store.read_db_connections ()) !Xapi_slave_db.slave_db
+    Db_cache_impl.sync (Db_conn_store.read_db_connections ()) !Xapi_slave_db.slave_db
 
 let endless_loop ~__context () =
   let uri = Constants.database_backup_uri in
@@ -215,7 +232,7 @@ let endless_loop ~__context () =
               | Some l -> Xapi_stdext_unix.Unixext.really_read_string fd (Int64.to_int l)
             in
             let delta_change = delta_of_rpc (Jsonrpc.of_string res) in
-            apply_changes delta_change __context;
+            Mutex.execute Xapi_slave_db.slave_db_mutex (fun () -> apply_changes delta_change __context);
             handle_notifications __context delta_change;
             if Mtime.Span.to_s now > delay_seconds then write_db_to_disk;
          )
