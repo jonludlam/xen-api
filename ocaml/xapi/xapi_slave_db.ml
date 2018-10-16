@@ -8,7 +8,9 @@ let slave_db_mutex = Mutex.create ()
 let slave_db = ref (Db_ref.get_database (Db_backend.make ()))
 
 let clear_db () =
-  Mutex.execute slave_db_mutex (fun () -> slave_db := (Db_cache_types.Database.make Schema.empty))
+  Mutex.execute slave_db_mutex (fun () ->
+      slave_db := Db_cache_types.Database.set_generation 0L !slave_db;
+      slave_db := (Db_cache_types.Database.make Schema.empty))
 
 let update_context_db (__context:Context.t) =
   if Pool_role.is_slave () then

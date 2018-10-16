@@ -127,17 +127,17 @@ let send_notification (c:Context.t) reason p =
     | Some record -> Db_action_helper.events_notify ~snapshot:record p.tbl reason p.row;
   end
 
-let make_change mtime tblname objref fldname newval =
-    Database.update (
-      (fun _ -> newval)
-      |> Row.update mtime fldname newval
-      |> Table.update mtime objref Row.empty
-      |> TableSet.update mtime tblname Table.empty)
-
-let make_empty_table mtime tblname =
+let make_change mtime tblname objref fldname newval db =
   Database.update (
-  (fun _ -> Table.empty)
-    |> TableSet.update mtime tblname Table.empty)
+    (fun _ -> newval)
+    |> Row.update mtime fldname newval
+    |> Table.update mtime objref Row.empty
+    |> TableSet.update mtime tblname Table.empty) db
+
+let make_empty_table mtime tblname db =
+  Database.update (
+    (fun _ -> Table.empty)
+    |> TableSet.update mtime tblname Table.empty) db
 
 let get_table_list db =
   Db_cache_types.TableSet.fold_over_recent (-2L) (fun table stat value acc -> table::acc) (Db_cache_types.Database.tableset db) []
@@ -169,12 +169,12 @@ let flatten_table_to_update (tbllist:table list) =
   List.concat (List.map (fun (t:table) ->
       (flat_row_list ({mtime=t.stat.modified; tblname=t.tblname; objref=""; fldname=""; value=Schema.Value.String "";})) t.rows) tbllist)
 
-let make_change_with_db_reply (update:update) =
+let make_change_with_db_reply db (update:update) =
   match update.fldname with
-  | "" -> make_empty_table update.mtime update.tblname
-  | _ -> make_change update.mtime update.tblname update.objref update.fldname update.value
+  | "" -> make_empty_table update.mtime update.tblname db
+  | _ -> make_change update.mtime update.tblname update.objref update.fldname update.value db
 
-let make_delete_with_db_reply __context delete db =
+let make_delete_with_db_reply __context db delete =
   if Db_cache_impl.is_valid_ref (Context.database_of __context) delete.key then
     Db_cache_types.remove_row delete.table delete.key db
   else
@@ -189,14 +189,14 @@ let apply_changes (delta:delta) __context =
       let new_db =
         !Xapi_slave_db.slave_db
         |> Database.set_generation delta.fresh_token
-        |> List.fold_right make_change_with_db_reply (flatten_table_to_update delta.tables)
-        |> List.fold_right (make_delete_with_db_reply __context) delta.deletes
+        |> (fun db -> List.fold_left make_change_with_db_reply db (flatten_table_to_update delta.tables))
+        |> (fun db -> List.fold_left (make_delete_with_db_reply __context) db delta.deletes)
       in
       Xapi_slave_db.slave_db := new_db;
     end;
   (* Need to check that we haven't missed anything *)
   if not (count_check (object_count !Xapi_slave_db.slave_db) (object_count (Db_ref.get_database (Context.database_of __context)))) then
-    Xapi_slave_db.slave_db := Db_cache_types.Database.set_generation 0L !Xapi_slave_db.slave_db
+    Xapi_slave_db.clear_db ()
 
 let fl tblname (rlist:row list) =
   List.fold_left (fun acc (r:row) -> [{tbl=tblname; row=r.objref}] @ acc) [] rlist
@@ -210,8 +210,10 @@ let handle_notifications __context (d:delta) =
 
 let write_db_to_disk =
   if !Xapi_globs.slave_dbs then
-    debug "Writing slave db to slave disk";
-    Db_cache_impl.sync (Db_conn_store.read_db_connections ()) !Xapi_slave_db.slave_db
+    begin
+      debug "Writing slave db to slave disk";
+      Db_cache_impl.sync (Db_conn_store.read_db_connections ()) !Xapi_slave_db.slave_db
+    end
 
 let endless_loop ~__context () =
   let uri = Constants.database_backup_uri in
