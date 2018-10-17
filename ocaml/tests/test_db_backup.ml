@@ -13,6 +13,7 @@
  *)
 
 open Test_common
+open Event_types
 
 let check_db_equals dba dbb =
   let mf = Db_cache_types.Database.manifest in
@@ -34,11 +35,11 @@ let stat_to_string (stat:Db_cache_types.Stat.t) =
 
 let dump db =
   Db_cache_types.TableSet.iter (fun tblname table ->
-    Printf.printf "\n# TABLE: %s\n\n" tblname;
-    Db_cache_types.Table.iter (fun objref row ->
-      Printf.printf "## Object: %s\n" objref;
-      Db_cache_types.Row.iter (fun fldname v ->
-        Printf.printf "  %s: %s\n" fldname (Schema.Value.marshal v)) row) table) (Db_cache_types.Database.tableset db)
+      Printf.printf "\n# TABLE: %s\n\n" tblname;
+      Db_cache_types.Table.iter (fun objref row ->
+          Printf.printf "## Object: %s\n" objref;
+          Db_cache_types.Row.iter (fun fldname v ->
+              Printf.printf "  %s: %s\n" fldname (Schema.Value.marshal v)) row) table) (Db_cache_types.Database.tableset db)
 
 let tbl_to_string (tbl:Db_cache_types.Table.t) =
   let row_func = Db_cache_types.Row.fold (fun str stat value acc -> (str ^ (Schema.Value.marshal value)) :: acc) in
@@ -171,11 +172,145 @@ let test_db_with_multiple_changes () =
 
   Xapi_slave_db.clear_db ()
 
+let test_db_events () =
+  (* Test that events on one object create the correct number of events on other objects *)
+  Xapi_slave_db.clear_db ();
+
+  let __context = make_test_database () in
+  let vma = make_vm __context () in
+  let _init_db = Db_ref.get_database (Context.database_of __context) in
+  let changes = Xapi_database_backup.get_delta __context (-2L) in
+  Xapi_database_backup.apply_changes changes __context;
+  let _changes_db = !(Xapi_slave_db.slave_db) in
+
+  let evs = Xapi_event.from __context ["vm"] "" 30.0 |> parse_event_from in
+  let tok = evs.token in
+  let vm_ev = List.filter (fun ev -> ev.ty="vm") evs.events in
+  Alcotest.(check int) "Creation of dom0 and test vma" 2 (List.length vm_ev);
+
+  Db.VM.set_name_description __context vma "NewName1";
+
+  let vmb = make_vm __context () in
+  let evs2 = Xapi_event.from __context ["vm"] tok 30.0 |> parse_event_from in
+  let tok2 = evs2.token in
+  let vm_ev2 = List.filter (fun ev -> ev.ty="vm") evs2.events in
+  Alcotest.(check int) "Rename vma and creation of test vmb" 2 (List.length vm_ev2);
+
+  let vbd = make_vbd ~__context ~vM:vma () in
+  let evs3 = Xapi_event.from __context ["vm"] tok2 30.0 |> parse_event_from in
+  let tok3 = evs3.token in
+  let vm_ev3 = List.filter (fun ev -> ev.ty="vm") evs3.events in
+  Alcotest.(check int) "Creation of vbd for vma" 1 (List.length vm_ev3);
+
+  Db.VBD.set_VM __context vbd vmb;
+  let evs4 = Xapi_event.from __context ["vm"] tok3 30.0 |> parse_event_from in
+  let vm_ev4 = List.filter (fun ev -> ev.ty="vm") evs4.events in
+  Alcotest.(check int) "Change vbd from vma to vmb" 2 (List.length vm_ev4);
+  Xapi_slave_db.clear_db ()
+
+let test_db_events_through_slave_db () =
+  (* Test that events on one object create the correct number of events on other objects *)
+  Xapi_slave_db.clear_db ();
+
+  let __context = make_test_database () in
+  let vma = make_vm __context () in
+  let _init_db = Db_ref.get_database (Context.database_of __context) in
+  let changes = Xapi_database_backup.get_delta __context (-2L) in
+  Xapi_database_backup.apply_changes changes __context;
+  let _changes_db = !(Xapi_slave_db.slave_db) in
+
+  let classes = ["vm"] in
+  let timeout = 30.0 in
+  let token = "" in
+
+  let evs = Xapi_slave_db.call_with_updated_context __context (Xapi_event.from ~classes ~token ~timeout) |> parse_event_from in
+  let tok = evs.token in
+  let vm_ev = List.filter (fun ev -> ev.ty="vm") evs.events in
+  Alcotest.(check int) "Creation of dom0 and test vma" 2 (List.length vm_ev);
+
+  Db.VM.set_name_description __context vma "NewName1";
+
+  let _vmb = make_vm __context () in
+  let token = tok in
+  let evs2 = Xapi_slave_db.call_with_updated_context __context (Xapi_event.from ~classes ~token ~timeout) |> parse_event_from in
+  let vm_ev2 = List.filter (fun ev -> ev.ty="vm") evs2.events in
+  Alcotest.(check int) "Rename vma and creation of test vmb" 2 (List.length vm_ev2);
+  Xapi_slave_db.clear_db ()
+
+let test_db_events_without_session () =
+  (* Test that events on one object create the correct number of events on other objects *)
+  Xapi_slave_db.clear_db ();
+
+  let __context = make_test_database () in
+  let __context = Context.update_session_id None __context in
+  let vma = make_vm __context () in
+  let _init_db = Db_ref.get_database (Context.database_of __context) in
+  let changes = Xapi_database_backup.get_delta __context (-2L) in
+  Xapi_database_backup.apply_changes changes __context;
+  let _changes_db = !(Xapi_slave_db.slave_db) in
+  Alcotest.(check bool) "Check that we don't have a session" false (Context.has_session_id __context);
+
+  let classes = ["vm"] in
+  let timeout = 30.0 in
+  let token = "" in
+
+  let evs = Xapi_slave_db.call_with_updated_context __context (Xapi_event.from ~classes ~token ~timeout) |> parse_event_from in
+  let tok = evs.token in
+  let vm_ev = List.filter (fun ev -> ev.ty="vm") evs.events in
+  Alcotest.(check int) "Creation vms without session" 2 (List.length vm_ev);
+
+  Db.VM.set_name_description __context vma "NewName1";
+
+  let _vmb = make_vm __context () in
+  let token = tok in
+  let evs2 = Xapi_slave_db.call_with_updated_context __context (Xapi_event.from ~classes ~token ~timeout) |> parse_event_from in
+  let vm_ev2 = List.filter (fun ev -> ev.ty="vm") evs2.events in
+  Alcotest.(check int) "Rename vm and make new vm" 2 (List.length vm_ev2);
+  Xapi_slave_db.clear_db ()
+
+let test_db_events_with_session () =
+  Xapi_slave_db.clear_db ();
+  let __context = make_test_database () in
+  let rpc, session_id = Test_common.make_client_params ~__context in
+  let __context = Context.update_session_id (Some session_id) __context in
+  Alcotest.(check bool) "Check that we have a session" true (Context.has_session_id __context);
+
+  let vma = make_vm __context () in
+  let _init_db = Db_ref.get_database (Context.database_of __context) in
+  let changes = Xapi_database_backup.get_delta __context (-2L) in
+  Xapi_database_backup.apply_changes changes __context;
+  let _changes_db = !(Xapi_slave_db.slave_db) in
+
+  let classes = ["vm"] in
+  let timeout = 30.0 in
+  let token = "" in
+
+  let evs = Xapi_slave_db.call_with_updated_context __context ~session_id:(Some session_id)
+      (Xapi_event.from ~classes ~token ~timeout) |> parse_event_from in
+  let tok = evs.token in
+  let vm_ev = List.filter (fun ev -> ev.ty="vm") evs.events in
+  Alcotest.(check int) "Creation vms without session" 2 (List.length vm_ev);
+
+  Db.VM.set_name_description __context vma "NewName1";
+
+  let _vmb = make_vm __context () in
+  let token = tok in
+  let evs2 = Xapi_slave_db.call_with_updated_context __context ~session_id:(Some session_id)
+      (Xapi_event.from ~classes ~token ~timeout) |> parse_event_from in
+  let vm_ev2 = List.filter (fun ev -> ev.ty="vm") evs2.events in
+  Alcotest.(check int) "Rename vm and make new vm" 2 (List.length vm_ev2);
+  Xapi_slave_db.clear_db ()
+
+
 let test =
   [
     "test_db_backup", `Quick, test_db_backup;
     "test_db_with_vm", `Quick, test_db_with_vm;
     "test_db_with_name_change", `Quick,  test_db_with_name_change;
     "test_db_with_multiple_changes", `Quick,  test_db_with_multiple_changes;
+    "test_db_events", `Quick, test_db_events;
+    "test_db_events_through_slave_db", `Quick, test_db_events_through_slave_db;
+    "test_db_events_without_session", `Quick, test_db_events_without_session;
+    "test_db_events_with_session", `Quick, test_db_events_with_session;
   ]
 

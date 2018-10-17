@@ -37,21 +37,22 @@ type del_tables =
   ; stat : stat
   } [@@deriving rpc]
 
+type count =
+  { tblname:string
+  ; count:  int
+  ; del:    int
+  } [@@deriving rpc]
+
 type delta =
   { fresh_token: int64
   ; tables :     table list
   ; deletes :    del_tables list
+  ; counts : count list
   } [@@deriving rpc]
 
 type edits =
   { ts :     TableSet.t
   ; tables : string list
-  }
-
-type count =
-  { tblname:string
-  ; count:  int
-  ; del:    int
   }
 
 type pair =
@@ -94,12 +95,24 @@ let check_for_updates token db =
   TableSet.fold_over_recent token (fun tblname {created; modified; deleted} value acc
                                     -> {tblname; stat={created;modified;deleted}; rows=(handle_table value)}::acc) ts []
 
+let get_table_list db =
+  Db_cache_types.TableSet.fold_over_recent (-2L) (fun table stat value acc -> table::acc) (Db_cache_types.Database.tableset db) []
+
+let counter db table =
+  let t = Db_cache_types.TableSet.find table (Db_cache_types.Database.tableset db) in
+  {tblname=table; count=0; del=(Db_cache_types.Table.get_deleted_len t)}
+
+let object_count db =
+  List.rev_map (counter db) (get_table_list db)
+
+
 let get_delta __context token =
   let db = Db_ref.get_database (Context.database_of __context) in
   Mutex.execute Db_lock.dbcache_mutex (fun () ->
       {fresh_token=Manifest.generation (Database.manifest db);
        tables=(check_for_updates token db);
-       deletes=(get_deleted token db)})
+       deletes=(get_deleted token db);
+       counts=(object_count db)})
 
 let handler (req: Request.t) s _ =
   req.Http.Request.close <- true;
@@ -134,16 +147,6 @@ let make_empty_table mtime tblname =
   Database.update (
     (fun _ -> Table.empty)
     |> TableSet.update mtime tblname Table.empty)
-
-let get_table_list db =
-  Db_cache_types.TableSet.fold_over_recent (-2L) (fun table stat value acc -> table::acc) (Db_cache_types.Database.tableset db) []
-
-let counter db table =
-  let t = Db_cache_types.TableSet.find table (Db_cache_types.Database.tableset db) in
-  {tblname=table; count=0; del=(Db_cache_types.Table.get_deleted_len t)}
-
-let object_count db =
-  List.rev_map (counter db) (get_table_list db)
 
 let count_eq_check (c1:count) (c2:count) =
   c1.tblname = c2.tblname && c1.count = c2.count && c1.del = c2.del
@@ -188,7 +191,7 @@ let apply_changes (delta:delta) __context =
       Xapi_slave_db.slave_db := new_db;
     end;
   (* Need to check that we haven't missed anything *)
-  if not (count_check (object_count !Xapi_slave_db.slave_db) (object_count (Db_ref.get_database (Context.database_of __context)))) then
+  if not (count_check (object_count !Xapi_slave_db.slave_db) delta.counts) then
     Xapi_slave_db.clear_db ()
 
 let fold_row tblname (rlist:row list) =
@@ -239,6 +242,9 @@ let slave_db_backup_loop ~__context () =
     try
       loop __context ()
     with
-      e -> debug "Exception in Slave Database Backup Thread - %s" (Printexc.to_string e); Thread.delay 0.5;
+      e ->
+      Debug.log_backtrace e (Backtrace.get e);
+      debug "Exception in Slave Database Backup Thread - %s" (Printexc.to_string e);
+      Thread.delay 0.5;
   done
 

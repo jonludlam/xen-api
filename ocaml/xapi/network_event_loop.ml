@@ -28,7 +28,7 @@ let _watch_networks_for_nbd_changes __context ~update_firewall ~wait_after_event
   let timeout = 30. +. api_timeout +. !Db_globs.master_connection_reset_timeout in
   let wait_for_network_change ~token =
     let from =
-        Event_types.parse_event_from (Xapi_slave_db.call_with_updated_context_db __context (Xapi_event.from ~classes ~token ~timeout)) in
+        Event_types.parse_event_from (Xapi_slave_db.call_with_updated_context __context (Xapi_event.from ~classes ~token ~timeout)) in
     from.Event_types.token
   in
 

@@ -18,6 +18,9 @@ let update_context_db (__context:Context.t) =
   else
     __context
 
-let call_with_updated_context_db (__context:Context.t) f =
+let call_with_updated_context (__context:Context.t) ?(session_id=None) f =
   let __context = update_context_db __context in
-  f ~__context
+  match session_id with
+  | None -> f ~__context;
+  | Some id -> f ~__context:(Context.update_session_id (Some id) __context);
+

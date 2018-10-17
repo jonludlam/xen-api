@@ -32,7 +32,6 @@ let delete_disks rpc session_id disks =
     ) disks
 
 let wait_for_subtask ?progress_minmax ~__context task =
-  let __context = Xapi_slave_db.update_context_db __context in
   Helpers.call_api_functions ~__context (fun rpc session ->
       let refresh_session = Xapi_session.consider_touching_session rpc session in
       let main_task = Context.get_task_id __context in
@@ -83,7 +82,7 @@ let wait_for_subtask ?progress_minmax ~__context task =
         let classes = [Printf.sprintf "task/%s" (Ref.string_of task);
              Printf.sprintf "task/%s" (Ref.string_of main_task)] in
         let events = Event_types.parse_event_from
-        (Xapi_slave_db.call_with_updated_context_db __context (Xapi_event.from ~classes ~token:!token ~timeout)) in
+        (Xapi_slave_db.call_with_updated_context __context ~session_id:(Some session) (Xapi_event.from ~classes ~token:!token ~timeout)) in
         refresh_session ();
         let checkevent ev =
           match Event_helper.record_of_event ev with

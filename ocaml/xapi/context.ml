@@ -51,6 +51,14 @@ let get_session_id x =
   | None -> failwith "Could not find a session_id"
   | Some x -> x
 
+let update_session_id session_id x =
+  {x with session_id = session_id}
+
+let has_session_id x =
+  match x.session_id with
+  | None -> false
+  | Some _ -> true
+
 let forwarded_task ctx =
   ctx.forwarded_task
 

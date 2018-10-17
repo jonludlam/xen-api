@@ -2406,7 +2406,7 @@ let events_from_xapi () =
                   let from =
                     try
                       Event_types.parse_event_from
-                      (Xapi_slave_db.call_with_updated_context_db __context (Xapi_event.from ~classes ~token:!token ~timeout:api_timeout))
+                      (Xapi_slave_db.call_with_updated_context __context ~session_id:(Some session_id) (Xapi_event.from ~classes ~token:!token ~timeout:api_timeout))
                     with e ->
                       Debug.log_backtrace e (Backtrace.get e);
                       raise e

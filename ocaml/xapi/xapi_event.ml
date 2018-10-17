@@ -282,6 +282,16 @@ module From = struct
     m: Mutex.t;                    (* protects access to the mutable fields in this record *)
   }
 
+  type changes =
+    { msg_gen : int64
+    ; messages : Message.t list
+    ; tableset : Db_cache_types.TableSet.t
+    ; creates : (string * string * Db_cache_types.Time.t) list
+    ; mods : (string * string * Db_cache_types.Time.t) list
+    ; deletes : (string * string * Db_cache_types.Time.t) list
+    ; last : Db_cache_types.Time.t
+    }
+
   (* The set of (blocking) calls associated with a session *)
   let calls : (API.ref_session, call list) Hashtbl.t = Hashtbl.create 10
 
@@ -415,7 +425,7 @@ let rec next ~__context =
   if relevant = [] then next ~__context
   else rpc_of_events relevant
 
-let from_inner __context session subs from from_t deadline =
+let from_inner __context subs from from_t deadline =
   let open From in
 
   (* The database tables involved in our subscription *)
@@ -462,25 +472,51 @@ let from_inner __context session subs from from_t deadline =
             ) (Db_cache_types.TableSet.find table tableset) acc
        ) ([],[],[],!last_generation) tables) in
 
-  (* Each event.from should have an independent subscription record *)
-  let msg_gen, messages, tableset, (creates, mods, deletes, last) =
-    with_call session subs
-      (fun sub ->
-         let rec grab_nonempty_range () =
-           let (msg_gen, messages, tableset, (creates,mods,deletes,last)) as result = Db_lock.with_lock (fun () -> grab_range (Context.database_of __context)) in
-           if creates = [] && mods = [] && deletes = [] && messages = [] && Unix.gettimeofday () < deadline then begin
-             last_generation := last; (* Cur_id was bumped, but nothing relevent fell out of the db. Therefore the *)
-             sub.cur_id <- last; (* last id the client got is equivalent to the current one *)
-             last_msg_gen := msg_gen;
-             wait2 sub last deadline;
-             Thread.delay 0.05;
+  let _last = ref 0L in
+  let content = ref { msg_gen = 0L; messages = [];tableset = Db_cache_types.TableSet.empty;creates = []; mods = []; deletes = []; last = 0L;} in
+  if Context.has_session_id __context then
+    begin
+      let session = Context.get_session_id __context in
+      (* Each event.from should have an independent subscription record *)
+      let msg_gen, messages, tableset, (creates, mods, deletes, last) =
+        with_call session subs
+          (fun sub ->
+             let rec grab_nonempty_range () =
+               let (msg_gen, messages, tableset, (creates,mods,deletes,last)) as result = Db_lock.with_lock (fun () -> grab_range (Context.database_of __context)) in
+               if creates = [] && mods = [] && deletes = [] && messages = [] && Unix.gettimeofday () < deadline then begin
+                 last_generation := last; (* Cur_id was bumped, but nothing relevent fell out of the db. Therefore the *)
+                 sub.cur_id <- last; (* last id the client got is equivalent to the current one *)
+                 last_msg_gen := msg_gen;
+                 wait2 sub last deadline;
+                 Thread.delay 0.05;
+                 grab_nonempty_range ()
+               end else
+                 result in
              grab_nonempty_range ()
-           end else
-             result in
-         grab_nonempty_range ()
-      ) in
-
-  last_generation := last;
+          ) in
+      last_generation := last;
+      content := {!content with msg_gen = msg_gen; messages = messages; tableset = tableset; creates = creates; mods = mods; deletes = deletes;};
+      _last := last;
+    end
+  else
+    begin
+      let msg_gen, messages, tableset, (creates, mods, deletes, last) =
+        let rec grab_nonempty_range () =
+          let (msg_gen, messages, tableset, (creates,mods,deletes,last)) as result =
+            Db_lock.with_lock (fun () -> grab_range (Context.database_of __context)) in
+          if creates = [] && mods = [] && deletes = [] && messages = [] && Unix.gettimeofday () < deadline then
+            begin
+              last_msg_gen := msg_gen;
+              Thread.delay 0.05;
+              grab_nonempty_range ()
+            end
+          else
+            result in
+        grab_nonempty_range () in
+      last_generation := last;
+      content := {!content with msg_gen = msg_gen; messages = messages; tableset = tableset; creates = creates; mods = mods; deletes = deletes;};
+      _last := last;
+    end;
 
   let event_of op ?snapshot (table, objref, time) = {
     id=Int64.to_string time; ts="0.0"; ty=String.lowercase_ascii table; op=op; reference=objref; snapshot=snapshot
@@ -488,7 +524,7 @@ let from_inner __context session subs from from_t deadline =
   let events = List.fold_left (fun acc x ->
       let ev = event_of `del x in
       if Subscription.event_matches subs ev then ev::acc else acc
-    ) [] deletes in
+    ) [] !content.deletes in
   let events = List.fold_left (fun acc (table, objref, mtime) ->
       let serialiser = Eventgen.find_get_record table in
       try
@@ -496,7 +532,7 @@ let from_inner __context session subs from from_t deadline =
         let ev = event_of `_mod ?snapshot:xml (table, objref, mtime) in
         if Subscription.event_matches subs ev then ev::acc else acc
       with _ -> acc
-    ) events mods in
+    ) events !content.mods in
   let events = List.fold_left (fun acc (table, objref, ctime) ->
       let serialiser = Eventgen.find_get_record table in
       try
@@ -504,12 +540,12 @@ let from_inner __context session subs from from_t deadline =
         let ev = event_of `add ?snapshot:xml (table, objref, ctime) in
         if Subscription.event_matches subs ev then ev::acc else acc
       with _ -> acc
-    ) events creates in
+    ) events !content.creates in
   let events = List.fold_left (fun acc mev ->
       let event = match mev with
         | Message.Create (_ref,message) -> event_of `add ?snapshot:(Some (API.rpc_of_message_t message)) ("message", Ref.string_of _ref, 0L)
         | Message.Del _ref -> event_of `del ("message",Ref.string_of _ref, 0L) in
-      event::acc) events messages in
+      event::acc) events !content.messages in
 
   let valid_ref_counts =
     Db_cache_types.TableSet.fold
@@ -517,15 +553,14 @@ let from_inner __context session subs from from_t deadline =
          (String.lowercase_ascii tablename,
           (Db_cache_types.Table.fold
              (fun r _ _ acc -> Int32.add 1l acc) table 0l))::acc)
-      tableset [] in
+      !content.tableset [] in
 
   {
     events; valid_ref_counts;
-    token = Token.to_string (last,msg_gen);
+    token = Token.to_string (!_last,!content.msg_gen);
   }
 
 let from ~__context ~classes ~token ~timeout =
-  let session = Context.get_session_id __context in
   let from, from_t =
     try
       Token.of_string token
@@ -542,9 +577,9 @@ let from ~__context ~classes ~token ~timeout =
      	   miss the Delete event and fail to generate the Modify because the
      	   snapshot can't be taken. *)
   let rec loop () =
-    let event_from = from_inner __context session subs from from_t deadline in
+    let event_from = from_inner __context subs from from_t deadline in
     if event_from.events = [] && (Unix.gettimeofday () < deadline) then begin
-      debug "suppressing empty event.from";
+      (*debug "suppressing empty event.from";*)
       loop ()
     end else begin
       rpc_of_event_from event_from
