@@ -81,9 +81,9 @@ let get_deleted ~token db =
   let tables =
     let all =
       let objs = List.filter (fun x -> x.Datamodel_types.gen_events) (Dm_api.objects_of_api Datamodel.all_api) in
-      List.rev (List.rev_map (fun x->x.Datamodel_types.name) objs) in
+      List.rev_map (fun x->x.Datamodel_types.name) objs in
     List.filter (fun table -> true) all in
-  List.concat (List.rev (List.rev_map (get_del_from_table_name token (Database.tableset db)) tables))
+  List.concat (List.rev_map (get_del_from_table_name token (Database.tableset db)) tables)
 
 let check_for_updates token db =
   let ts = Database.tableset db in
@@ -96,14 +96,10 @@ let check_for_updates token db =
 
 let get_delta __context token =
   let db = Db_ref.get_database (Context.database_of __context) in
-  let db_access = fun () ->
-    Mutex.execute Db_lock.dbcache_mutex (fun () ->
-        {fresh_token=Manifest.generation (Database.manifest db);
-         tables=(check_for_updates token db);
-         deletes=(get_deleted token db)})
-  in
-  let _dbreply = db_access () in
-  _dbreply
+  Mutex.execute Db_lock.dbcache_mutex (fun () ->
+      {fresh_token=Manifest.generation (Database.manifest db);
+       tables=(check_for_updates token db);
+       deletes=(get_deleted token db)})
 
 let handler (req: Request.t) s _ =
   req.Http.Request.close <- true;
@@ -127,17 +123,17 @@ let send_notification (c:Context.t) reason p =
     | Some record -> Db_action_helper.events_notify ~snapshot:record p.tbl reason p.row;
   end
 
-let make_change mtime tblname objref fldname newval db =
+let make_change mtime tblname objref fldname newval =
   Database.update (
     (fun _ -> newval)
     |> Row.update mtime fldname newval
     |> Table.update mtime objref Row.empty
-    |> TableSet.update mtime tblname Table.empty) db
+    |> TableSet.update mtime tblname Table.empty)
 
-let make_empty_table mtime tblname db =
+let make_empty_table mtime tblname =
   Database.update (
     (fun _ -> Table.empty)
-    |> TableSet.update mtime tblname Table.empty) db
+    |> TableSet.update mtime tblname Table.empty)
 
 let get_table_list db =
   Db_cache_types.TableSet.fold_over_recent (-2L) (fun table stat value acc -> table::acc) (Db_cache_types.Database.tableset db) []
@@ -147,26 +143,23 @@ let counter db table =
   {tblname=table; count=0; del=(Db_cache_types.Table.get_deleted_len t)}
 
 let object_count db =
-  let tables = get_table_list db in
-  List.rev (List.rev_map (counter db) tables)
+  List.rev_map (counter db) (get_table_list db)
 
 let count_eq_check (c1:count) (c2:count) =
   c1.tblname = c2.tblname && c1.count = c2.count && c1.del = c2.del
 
 let count_check (c1_list: count list) (c2_list: count list) =
-  if List.length c1_list = List.length c2_list then
     List.for_all2 count_eq_check c1_list c2_list
-  else
-    raise Content_length_required
 
 let flat_row_list update (rlist:row list) =
   match rlist with
   | [] -> [update]
   | _ -> List.fold_left (fun acc (r:row) ->
-      (List.map (fun (f:field) -> {update with mtime=f.stat.modified; objref=r.objref; fldname=f.fldname; value=f.value;}) r.fields) @ acc) [] rlist
+      (List.rev_map (fun (f:field) ->
+           {update with mtime=f.stat.modified; objref=r.objref; fldname=f.fldname; value=f.value;}) r.fields) @ acc) [] rlist
 
 let flatten_table_to_update (tbllist:table list) =
-  List.concat (List.map (fun (t:table) ->
+  List.concat (List.rev_map (fun (t:table) ->
       (flat_row_list ({mtime=t.stat.modified; tblname=t.tblname; objref=""; fldname=""; value=Schema.Value.String "";})) t.rows) tbllist)
 
 let make_change_with_db_reply db (update:update) =
@@ -198,11 +191,11 @@ let apply_changes (delta:delta) __context =
   if not (count_check (object_count !Xapi_slave_db.slave_db) (object_count (Db_ref.get_database (Context.database_of __context)))) then
     Xapi_slave_db.clear_db ()
 
-let fl tblname (rlist:row list) =
+let fold_row tblname (rlist:row list) =
   List.fold_left (fun acc (r:row) -> [{tbl=tblname; row=r.objref}] @ acc) [] rlist
 
 let info_extract (tlist:table list) =
-  List.fold_left (fun pl (t:table) -> (fl t.tblname t.rows) @ pl) [] tlist
+  List.fold_left (fun pl (t:table) -> (fold_row t.tblname t.rows) @ pl) [] tlist
 
 let handle_notifications __context (d:delta) =
   List.iter ((fun __context (d:del_tables) -> send_notification __context "del" {tbl=d.table; row=d.key}) __context) d.deletes;
@@ -215,7 +208,7 @@ let write_db_to_disk =
       Db_cache_impl.sync (Db_conn_store.read_db_connections ()) !Xapi_slave_db.slave_db
     end
 
-let endless_loop ~__context () =
+let loop ~__context () =
   let uri = Constants.database_backup_uri in
   let delay_seconds = 300.0 in
   let start = Mtime_clock.counter () in
@@ -244,7 +237,7 @@ let endless_loop ~__context () =
 let slave_db_backup_loop ~__context () =
   while (true) do
     try
-      endless_loop __context ()
+      loop __context ()
     with
       e -> debug "Exception in Slave Database Backup Thread - %s" (Printexc.to_string e); Thread.delay 0.5;
   done
