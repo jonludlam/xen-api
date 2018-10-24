@@ -604,6 +604,17 @@ let inject ~__context ~_class ~_ref =
 
 (* Internal interface ****************************************************)
 
+let create_call_task ~__context loc =
+  debug "Creating wakeup for %s" loc;
+  let __context = Xapi_slave_db.update_context_db __context in
+  let id = TaskHelper.XapiEvent ("TaskForEvents " ^ loc) in
+  TaskHelper.register_task __context id;
+  let _new_task = TaskHelper.id_to_task_exn id in
+  let _wakeup_function = (fun () ->
+      TaskHelper.destroy __context _new_task) in
+  let _wakeup_classes = [Printf.sprintf "task/%s" (Ref.string_of _new_task)] in
+  (id, _wakeup_function, _wakeup_classes)
+
 let event_add ?snapshot ty op reference  =
   let objs = List.filter (fun x->x.Datamodel_types.gen_events) (Dm_api.objects_of_api Datamodel.all_api) in
   let objs = List.map (fun x->x.Datamodel_types.name) objs in

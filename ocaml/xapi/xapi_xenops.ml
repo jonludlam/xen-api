@@ -2370,82 +2370,60 @@ let events_from_xapi () =
        let localhost = Helpers.get_localhost ~__context in
        let token = ref "" in
        while true do
-         try
-           Helpers.call_api_functions ~__context
-             (fun rpc session_id ->
-                trigger_xenapi_reregister :=
-                  (fun () ->
+           let id, _wakeup_function, wakeup_classes = Xapi_event.create_call_task __context "xapi_xenops" in
+           trigger_xenapi_reregister := _wakeup_function;
+           (* We register for events on resident_VMs only *)
+           let resident_VMs = Db.Host.get_resident_VMs ~__context ~self:localhost in
+
+           let uuids = List.map (fun self -> Db.VM.get_uuid ~__context ~self) resident_VMs in
+           let cached = Mutex.execute metadata_m (fun () -> Xenops_cache.list_nolock ()) in
+           let missing_in_cache = Listext.List.set_difference uuids cached in
+           let extra_in_cache = Listext.List.set_difference cached uuids in
+           if missing_in_cache <> []
+           then error "events_from_xapi: missing from the cache: [ %s ]" (String.concat "; " missing_in_cache);
+           if extra_in_cache <> []
+           then error "events_from_xapi: extra items in the cache: [ %s ]" (String.concat "; " extra_in_cache);
+
+           let classes = List.map (fun x -> Printf.sprintf "VM/%s" (Ref.string_of x)) resident_VMs in
+           (* NB we re-use the old token so we don't get events we've already
+                   received BUT we will not necessarily receive events for the new VMs *)
+           let classes = wakeup_classes @ classes in
+           while (TaskHelper.task_id_exists id) do
+             let api_timeout = 60. in
+             let from =
+               try
+                 Event_types.parse_event_from
+                   (Xapi_slave_db.call_with_updated_context __context (Xapi_event.from ~classes ~token:!token ~timeout:api_timeout))
+               with e ->
+                 Debug.log_backtrace e (Backtrace.get e);
+                 raise e
+             in
+             if List.length from.events > 200 then warn "Warning: received more than 200 events!";
+             List.iter
+               (function
+                 | { ty = "vm"; reference = vm' } ->
+                   let vm = Ref.of_string vm' in
+                   begin
                      try
-                       (* This causes Event.next () and Event.from () to return SESSION_INVALID *)
-                       debug "triggering xapi event thread to re-register via session.logout";
-                       XenAPI.Session.logout ~rpc ~session_id
-                     with
-                     | Api_errors.Server_error(code, _) when code = Api_errors.session_invalid ->
-                       debug "Event thread has already woken up"
-                     | e ->
-                       error "Waking up the xapi event thread: %s" (string_of_exn e)
-                  );
-                (* We register for events on resident_VMs only *)
-                let resident_VMs = Db.Host.get_resident_VMs ~__context ~self:localhost in
-
-                let uuids = List.map (fun self -> Db.VM.get_uuid ~__context ~self) resident_VMs in
-                let cached = Mutex.execute metadata_m (fun () -> Xenops_cache.list_nolock ()) in
-                let missing_in_cache = Listext.List.set_difference uuids cached in
-                let extra_in_cache = Listext.List.set_difference cached uuids in
-                if missing_in_cache <> []
-                then error "events_from_xapi: missing from the cache: [ %s ]" (String.concat "; " missing_in_cache);
-                if extra_in_cache <> []
-                then error "events_from_xapi: extra items in the cache: [ %s ]" (String.concat "; " extra_in_cache);
-
-                let classes = List.map (fun x -> Printf.sprintf "VM/%s" (Ref.string_of x)) resident_VMs in
-                (* NB we re-use the old token so we don't get events we've already
-                   							   received BUT we will not necessarily receive events for the new VMs *)
-
-                while true do
-                  let api_timeout = 60. in
-                  let from =
-                    try
-                      Event_types.parse_event_from
-                      (Xapi_slave_db.call_with_updated_context __context ~session_id:(Some session_id) (Xapi_event.from ~classes ~token:!token ~timeout:api_timeout))
-                    with e ->
-                      Debug.log_backtrace e (Backtrace.get e);
-                      raise e
-                  in
-                  if List.length from.events > 200 then warn "Warning: received more than 200 events!";
-                  List.iter
-                    (function
-                      | { ty = "vm"; reference = vm' } ->
-                        let vm = Ref.of_string vm' in
-                        begin
-                          try
-                            let id = id_of_vm ~__context ~self:vm in
-                            let resident_here = Db.VM.get_resident_on ~__context ~self:vm = localhost in
-                            debug "Event on VM %s; resident_here = %b" id resident_here;
-                            if resident_here
-                            then Xenopsd_metadata.update ~__context ~self:vm |> ignore
-                          with e ->
-                            if not(Db.is_valid_ref __context vm)
-                            then debug "VM %s has been removed: event on it will be ignored" (Ref.string_of vm)
-                            else begin
-                              error "Caught %s while processing XenAPI event for VM %s" (Printexc.to_string e) (Ref.string_of vm);
-                              raise e
-                            end
-                        end
-                      | _ -> warn "Received event for something we didn't register for!"
-                    ) from.events;
-                  token := from.token;
-                  Events_from_xapi.broadcast !token;
-                done
-             )
-         with
-         | Api_errors.Server_error(code, _) when code = Api_errors.session_invalid ->
-           debug "Woken event thread: updating list of event subscriptions"
-         | e ->
-           debug "Caught %s listening to events from xapi" (string_of_exn e);
-           (* Start from scratch *)
-           token := "";
-           Thread.delay 15.
-       done
+                       let id = id_of_vm ~__context ~self:vm in
+                       let resident_here = Db.VM.get_resident_on ~__context ~self:vm = localhost in
+                       debug "Event on VM %s; resident_here = %b" id resident_here;
+                       if resident_here
+                       then Xenopsd_metadata.update ~__context ~self:vm |> ignore
+                     with e ->
+                       if not(Db.is_valid_ref __context vm)
+                       then debug "VM %s has been removed: event on it will be ignored" (Ref.string_of vm)
+                       else begin
+                         error "Caught %s while processing XenAPI event for VM %s" (Printexc.to_string e) (Ref.string_of vm);
+                         raise e
+                       end
+                   end
+                 | _ -> warn "Received event for something we didn't register for!"
+               ) from.events;
+             token := from.token;
+             Events_from_xapi.broadcast !token;
+           done
+         done
     )
 
 let success_task queue_name f dbg id =

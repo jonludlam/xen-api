@@ -78,8 +78,9 @@ let wait_for_subtask ?progress_minmax ~__context task =
 
       (* Watch for events relating to the VDI copy sub-task and the over-arching task *)
       while not !finished do
+        let id, _wakeup_function, wakeup_classes = Xapi_event.create_call_task __context "vm_clone" in
         let timeout = 30. in
-        let classes = [Printf.sprintf "task/%s" (Ref.string_of task);
+        let classes = wakeup_classes @ [Printf.sprintf "task/%s" (Ref.string_of task);
              Printf.sprintf "task/%s" (Ref.string_of main_task)] in
         let events = Event_types.parse_event_from
         (Xapi_slave_db.call_with_updated_context __context ~session_id:(Some session) (Xapi_event.from ~classes ~token:!token ~timeout)) in

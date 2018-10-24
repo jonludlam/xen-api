@@ -16,9 +16,9 @@ module D=Debug.Make(struct let name="network_event_loop" end)
 open D
 
 let _watch_networks_for_nbd_changes __context ~update_firewall ~wait_after_event_seconds ~wait_after_failure_seconds =
-
+  let id, _wakeup_function, wakeup_classes = Xapi_event.create_call_task __context "network_event_loop" in
   (* We keep track of the network objects in the database using this event loop. *)
-  let classes = ["network"] in
+  let classes = wakeup_classes @ ["network"] in
   (* We keep track of the interfaces that we last passed to the firewall script
      to allow NBD traffic on them. At startup, we don't know on which
      interfaces NBD is allowed, and we always update the firewall. *)
