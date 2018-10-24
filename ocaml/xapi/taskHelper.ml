@@ -225,7 +225,6 @@ let failed ~__context exn =
 type id =
   | Sm of string
   | Xenops of string * string (* queue name * id *)
-  | XapiEvent of string
 
 let id_to_task_tbl : (id, API.ref_task) Hashtbl.t = Hashtbl.create 10
 let task_to_id_tbl : (API.ref_task, id) Hashtbl.t = Hashtbl.create 10
@@ -236,12 +235,6 @@ let id_to_task_exn id =
     (fun () ->
        Hashtbl.find id_to_task_tbl id
     )
-
-let task_id_exists id =
-  try
-    let _t = id_to_task_exn id in
-    true
-  with _ -> false
 
 let task_to_id_exn task =
   Mutex.execute task_tbl_m

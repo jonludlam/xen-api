@@ -44,11 +44,9 @@ val assert_op_valid :  ?ok_if_no_session_in_context:bool -> __context:Context.t 
 type id =
   | Sm of string
   | Xenops of string * string (** queue name * VM id *)
-  | XapiEvent of string
 
 val id_to_task_exn : id -> API.ref_task
 val task_to_id_exn : API.ref_task -> id
-val task_id_exists : id -> bool
 val register_task : Context.t -> ?cancellable:bool -> id -> unit
 val unregister_task : Context.t -> id -> unit
 

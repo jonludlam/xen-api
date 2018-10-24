@@ -2370,8 +2370,8 @@ let events_from_xapi () =
        let localhost = Helpers.get_localhost ~__context in
        let token = ref "" in
        while true do
-           let id, _wakeup_function, wakeup_classes = Xapi_event.create_call_task __context "xapi_xenops" in
-           trigger_xenapi_reregister := _wakeup_function;
+         Xapi_event.with_wakeup __context "xapi_xenops" (fun wakeup_function wakeup_classes task ->
+           trigger_xenapi_reregister := wakeup_function;
            (* We register for events on resident_VMs only *)
            let resident_VMs = Db.Host.get_resident_VMs ~__context ~self:localhost in
 
@@ -2388,7 +2388,7 @@ let events_from_xapi () =
            (* NB we re-use the old token so we don't get events we've already
                    received BUT we will not necessarily receive events for the new VMs *)
            let classes = wakeup_classes @ classes in
-           while (TaskHelper.task_id_exists id) do
+           while (Db.is_valid_ref __context task) do
              let api_timeout = 60. in
              let from =
                try
@@ -2423,6 +2423,7 @@ let events_from_xapi () =
              token := from.token;
              Events_from_xapi.broadcast !token;
            done
+           );
          done
     )
 

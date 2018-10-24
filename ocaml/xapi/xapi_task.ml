@@ -48,3 +48,6 @@ let cancel ~__context ~task =
 let set_status ~__context ~self ~value =
   TaskHelper.assert_op_valid ~__context self;
   Db.Task.set_status ~__context ~self ~value
+
+let task_exists ~__context ~self =
+  Db.is_valid_ref __context self

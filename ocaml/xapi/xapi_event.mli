@@ -22,7 +22,7 @@ val unregister: __context:Context.t -> classes:string list -> unit
 val next: __context:Context.t -> Rpc.t
 (** Blocking call which returns the next set of events relevant to this session. *)
 
-val create_call_task : __context:Context.t -> string -> TaskHelper.id * (unit -> unit) * string list
+val with_wakeup : Context.t -> string -> ((unit -> unit) -> string list -> API.ref_task -> 'a) -> 'a
 (** Allow us to make a function call that creates a task, so we can grab control back by killing the task *)
 
 val from: __context:Context.t -> classes:string list -> token:string -> timeout:float -> Rpc.t
