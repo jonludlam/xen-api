@@ -2418,6 +2418,7 @@ let events_from_xapi () =
                          raise e
                        end
                    end
+                 | { ty = "task"; reference = task_ref } -> wakeup_function ()
                  | _ -> warn "Received event for something we didn't register for!"
                ) from.events;
              token := from.token;

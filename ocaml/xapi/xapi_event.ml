@@ -606,22 +606,16 @@ let inject ~__context ~_class ~_ref =
 
 let with_wakeup __context loc f =
   debug "Creating wakeup for %s" loc;
-  let __context = Xapi_slave_db.update_context_db __context in
   let label = "TaskForEvents " ^ loc in
   let _t =
     let subtask_of = Context.get_task_id __context in
-    let session_id = try Some (Context.get_session_id __context) with _-> None in
-    Context.make ?session_id ~task_description:"Task for event from loop" ~subtask_of ~task_in_database:true label
+    Context.make ~task_description:"Task for event from loop" ~subtask_of ~task_in_database:true label
     |> Context.get_task_id
   in
   let wakeup_classes = [Printf.sprintf "task/%s" (Ref.string_of _t)] in
   let wakeup_function = (fun () ->
-  try
-    TaskHelper.assert_op_valid ~__context _t;
-    if TaskHelper.status_is_completed (Db.Task.get_status ~__context ~self:_t)
-    then Db.Task.destroy ~__context ~self:_t
-    else Db.Task.add_to_current_operations ~__context ~self:_t ~key:"task" ~value:`destroy
-  with _ -> ();) in
+      if Db.is_valid_ref __context _t then
+        Db.Task.destroy ~__context ~self:_t) in
   let return = f wakeup_function wakeup_classes _t in
   wakeup_function ();
   return
