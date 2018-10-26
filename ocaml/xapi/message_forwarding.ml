@@ -698,12 +698,11 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
         let unfinished = List.exists (fun state -> state = `pending) statuses in
         if unfinished
         then begin
-          Xapi_event.with_wakeup __context "message_forwarding" (fun wakeup_function wakeup_classes task ->
           let timeout = 30.0 in
-          let classes = wakeup_classes @ classes in
+          let classes = classes in
           let from = Event_types.parse_event_from (Xapi_slave_db.call_with_updated_context __context (Xapi_event.from ~classes ~token ~timeout)) in
           debug "Using events to wait for tasks: %s" (String.concat "," classes);
-          process from.Event_types.token);
+          process from.Event_types.token
         end else
           ()
       in

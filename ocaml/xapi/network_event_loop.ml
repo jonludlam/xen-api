@@ -17,8 +17,7 @@ open D
 
 let _watch_networks_for_nbd_changes __context ~update_firewall ~wait_after_event_seconds ~wait_after_failure_seconds =
   (* We keep track of the network objects in the database using this event loop. *)
-  Xapi_event.with_wakeup __context "network_event_loop" (fun wakeup_function wakeup_classes task ->
-  let classes = wakeup_classes @ ["network"] in
+  let classes = ["network"] in
   (* We keep track of the interfaces that we last passed to the firewall script
      to allow NBD traffic on them. At startup, we don't know on which
      interfaces NBD is allowed, and we always update the firewall. *)
@@ -88,7 +87,7 @@ let _watch_networks_for_nbd_changes __context ~update_firewall ~wait_after_event
   in
 
   debug "Listening to events on network objects";
-  loop ~token:"" ~allowed_interfaces)
+  loop ~token:"" ~allowed_interfaces
 
 let update_firewall interfaces_allowed_for_nbd =
   let args = "set" :: interfaces_allowed_for_nbd in
