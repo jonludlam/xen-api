@@ -33,7 +33,6 @@ let delete_disks rpc session_id disks =
 
 let wait_for_subtask ?progress_minmax ~__context task =
   Helpers.call_api_functions ~__context (fun rpc session ->
-      let refresh_session = Xapi_session.consider_touching_session rpc session in
       let main_task = Context.get_task_id __context in
 
       let cancel_task () =
@@ -78,12 +77,13 @@ let wait_for_subtask ?progress_minmax ~__context task =
 
       (* Watch for events relating to the VDI copy sub-task and the over-arching task *)
       while not !finished do
-        let timeout = 30. in
-        let classes = [Printf.sprintf "task/%s" (Ref.string_of task);
-             Printf.sprintf "task/%s" (Ref.string_of main_task)] in
-        let events = Event_types.parse_event_from
-        (Xapi_slave_db.call_with_updated_context __context ~session_id:(Some session) (Xapi_event.from ~classes ~token:!token ~timeout)) in
-        refresh_session ();
+        Xapi_event.with_wakeup __context "vm_clone" (fun wakeup_function wakeup_classes task ->
+            let timeout = 30. in
+            let classes = wakeup_classes @ [Printf.sprintf "task/%s" (Ref.string_of task);
+                                            Printf.sprintf "task/%s" (Ref.string_of main_task)] in
+            let events = Event_types.parse_event_from
+                (Xapi_slave_db.call_with_updated_context __context (Xapi_event.from ~classes ~token:!token ~timeout)) in
+        Xapi_session.consider_touching_task __context task wakeup_function;
         let checkevent ev =
           match Event_helper.record_of_event ev with
           | Event_helper.Task (r, Some x) ->
@@ -91,7 +91,7 @@ let wait_for_subtask ?progress_minmax ~__context task =
             else if r=main_task then process_main_task x
           | _ -> () (* received an irrelevant event *)
         in
-        List.iter checkevent events.events
+        List.iter checkevent events.events);
       done;
       debug "Finished listening for events relating to tasks %s and %s" (Ref.string_of task) (Ref.string_of main_task);
 
