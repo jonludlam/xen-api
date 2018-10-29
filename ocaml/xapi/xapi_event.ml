@@ -496,6 +496,7 @@ let from_inner __context subs from from_t deadline =
           ) in
       last_generation := last;
       content := {msg_gen; messages; tableset; creates; mods; deletes; last;};
+      _last := last;
     end
   else
     begin
@@ -514,6 +515,7 @@ let from_inner __context subs from from_t deadline =
         grab_nonempty_range () in
       last_generation := last;
       content := {msg_gen; messages; tableset; creates; mods; deletes; last;};
+      _last := last;
     end;
 
   let event_of op ?snapshot (table, objref, time) = {

@@ -323,13 +323,6 @@ let consider_touching_session rpc session_id =
       ignore(Client.Session.get_uuid rpc session_id session_id)
     end
 
-let consider_touching_task __context task f =
-  let start = Mtime_clock.counter () in
-  let now = Mtime_clock.count start in
-  let interval = 30.0 in
-  if Mtime.Span.to_s now > interval then
-    f ()
-
 let pool_authenticate ~__context psecret =
   if psecret = !Xapi_globs.pool_secret then ()
   else failwith "Pool credentials invalid"
