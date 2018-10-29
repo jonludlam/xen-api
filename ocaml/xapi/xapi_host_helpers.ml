@@ -326,7 +326,7 @@ module Configuration = struct
     let loop (token, was_in_rpu) =
       Helpers.call_api_functions ~__context (fun rpc session_id ->
           let classes = ["host"; "pool"] in
-          let events = (Xapi_slave_db.call_with_updated_context __context ~session_id:(Some session_id)
+          let events = (Xapi_slave_db.call_with_updated_context __context
                           (Xapi_event.from ~classes ~token ~timeout:delay))
                        |> Event_types.parse_event_from  in
           let check_host (host_ref,host_rec) =
