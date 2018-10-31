@@ -699,7 +699,6 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
         if unfinished
         then begin
           let timeout = 30.0 in
-          let classes = classes in
           let from = Event_types.parse_event_from (Xapi_slave_db.call_with_updated_context __context (Xapi_event.from ~classes ~token ~timeout)) in
           debug "Using events to wait for tasks: %s" (String.concat "," classes);
           process from.Event_types.token

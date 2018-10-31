@@ -69,7 +69,6 @@ type update =
   }
 
 exception Content_length_required
-
 let delta_to_string (d:delta) = Jsonrpc.to_string (rpc_of_delta d)
 
 (* Master Functions *)
@@ -88,12 +87,12 @@ let get_deleted ~token db =
 
 let check_for_updates token db =
   let ts = Database.tableset db in
-  let handle_obj obj = Row.fold_over_recent token (fun fldname {created; modified; deleted} value acc
-                                                    -> {fldname; stat={created;modified;deleted}; value=value}::acc) obj [] in
-  let handle_table table = Table.fold_over_recent token (fun objref {created; modified; deleted} value acc
-                                                          -> {objref; stat={created;modified;deleted}; fields=(handle_obj value)}::acc) table [] in
-  TableSet.fold_over_recent token (fun tblname {created; modified; deleted} value acc
-                                    -> {tblname; stat={created;modified;deleted}; rows=(handle_table value)}::acc) ts []
+  let handle_obj obj = Row.fold_over_recent token (fun fldname {created; modified; deleted} value acc ->
+      {fldname; stat={created;modified;deleted}; value=value}::acc) obj [] in
+  let handle_table table = Table.fold_over_recent token (fun objref {created; modified; deleted} value acc ->
+      {objref; stat={created;modified;deleted}; fields=(handle_obj value)}::acc) table [] in
+  TableSet.fold_over_recent token (fun tblname {created; modified; deleted} value acc ->
+      {tblname; stat={created;modified;deleted}; rows=(handle_table value)}::acc) ts []
 
 let get_table_list db =
   Db_cache_types.TableSet.fold_over_recent (-2L) (fun table stat value acc -> table::acc) (Db_cache_types.Database.tableset db) []
@@ -104,7 +103,6 @@ let counter db table =
 
 let object_count db =
   List.rev_map (counter db) (get_table_list db)
-
 
 let get_delta __context token =
   let db = Db_ref.get_database (Context.database_of __context) in
@@ -119,7 +117,7 @@ let handler (req: Request.t) s _ =
   try
     let token = Generation.of_string (snd (List.find (fun (x,y) -> x = "token") req.query)) in
     Xapi_http.with_context "Database backup" req s (fun __context ->
-        (token:Db_cache_types.Time.t)
+        token
         |> get_delta __context
         |> rpc_of_delta
         |> Jsonrpc.to_string
@@ -129,30 +127,23 @@ let handler (req: Request.t) s _ =
 
 (* Slave Functions *)
 
-let send_notification (c:Context.t) reason p =
-  let record = (Eventgen.find_get_record p.tbl ~__context:c ~self:p.row) () in
-  begin match record with
-    | None -> debug "Could not send %s event for %s in %s table" reason p.row p.tbl;
-    | Some record -> Db_action_helper.events_notify ~snapshot:record p.tbl reason p.row;
-  end
-
 let make_change mtime tblname objref fldname newval =
-  Database.update (
-    (fun _ -> newval)
-    |> Row.update mtime fldname newval
-    |> Table.update mtime objref Row.empty
-    |> TableSet.update mtime tblname Table.empty)
+  (fun _ -> newval)
+  |> Row.update mtime fldname newval
+  |> Table.update mtime objref Row.empty
+  |> TableSet.update mtime tblname Table.empty
+  |> Database.update
 
 let make_empty_table mtime tblname =
-  Database.update (
-    (fun _ -> Table.empty)
-    |> TableSet.update mtime tblname Table.empty)
+  (fun _ -> Table.empty)
+  |> TableSet.update mtime tblname Table.empty
+  |> Database.update
 
 let count_eq_check (c1:count) (c2:count) =
   c1.tblname = c2.tblname && c1.count = c2.count && c1.del = c2.del
 
 let count_check (c1_list: count list) (c2_list: count list) =
-    List.for_all2 count_eq_check c1_list c2_list
+  List.for_all2 count_eq_check c1_list c2_list
 
 let flat_row_list update (rlist:row list) =
   match rlist with
@@ -191,14 +182,26 @@ let apply_changes (delta:delta) __context =
       Xapi_slave_db.slave_db := new_db;
     end;
   (* Need to check that we haven't missed anything *)
-  if not (count_check (object_count !Xapi_slave_db.slave_db) delta.counts) then
-    Xapi_slave_db.clear_db ()
+  let slave_counts = object_count !Xapi_slave_db.slave_db in
+  if not (count_check slave_counts delta.counts) then
+    begin
+      debug "The local database and the master database do not appear to be the same size - clearing slave db";
+      Xapi_slave_db.clear_db ()
+    end
 
 let fold_row tblname (rlist:row list) =
   List.fold_left (fun acc (r:row) -> [{tbl=tblname; row=r.objref}] @ acc) [] rlist
 
 let info_extract (tlist:table list) =
   List.fold_left (fun pl (t:table) -> (fold_row t.tblname t.rows) @ pl) [] tlist
+
+let send_notification __context reason p =
+  let __context = Xapi_slave_db.update_context_db __context in
+  let record = (Eventgen.find_get_record p.tbl ~__context ~self:p.row) () in
+  begin match record with
+    | None -> debug "Could not send %s event for %s in %s table" reason p.row p.tbl;
+    | Some record -> Db_action_helper.events_notify ~snapshot:record p.tbl reason p.row;
+  end
 
 let handle_notifications __context (d:delta) =
   List.iter ((fun __context (d:del_tables) -> send_notification __context "del" {tbl=d.table; row=d.key}) __context) d.deletes;
@@ -215,31 +218,34 @@ let loop ~__context () =
   let uri = Constants.database_backup_uri in
   let delay_seconds = 300.0 in
   let start = Mtime_clock.counter () in
+  let token_str = ref "-2" in
   while (true) do
     let now = Mtime_clock.count start in
     let addr = Pool_role.get_master_address() in
     let psec = !Xapi_globs.pool_secret in
-    let token_str = Int64.to_string (Manifest.generation (Database.manifest !Xapi_slave_db.slave_db)) in
-    let req = Xapi_http.http_request ~cookie:["pool_secret", psec] ~query:[("token", token_str)] Http.Get uri in
+    let req = Xapi_http.http_request ~cookie:["pool_secret", psec] ~query:[("token", !token_str)] Http.Get uri in
     let transport = SSL(SSL.make (), addr, !Xapi_globs.https_port) in
-    with_transport transport
-      (with_http req
-         (fun (response, fd) ->
-            let res = match response.Http.Response.content_length with
-              | None -> raise Content_length_required
-              | Some l -> Xapi_stdext_unix.Unixext.really_read_string fd (Int64.to_int l)
-            in
-            let delta_change = delta_of_rpc (Jsonrpc.of_string res) in
-            Mutex.execute Xapi_slave_db.slave_db_mutex (fun () -> apply_changes delta_change __context);
-            handle_notifications __context delta_change;
-            if Mtime.Span.to_s now > delay_seconds then write_db_to_disk;
-         )
-      )
+    let changes = with_transport transport
+        (with_http req
+           (fun (response, fd) ->
+              let res = match response.Http.Response.content_length with
+                | None -> raise Content_length_required
+                | Some l -> Xapi_stdext_unix.Unixext.really_read_string fd (Int64.to_int l)
+              in
+              delta_of_rpc (Jsonrpc.of_string res)
+           )
+        ) in
+    Mutex.execute Xapi_slave_db.slave_db_mutex (fun () -> apply_changes changes __context);
+    handle_notifications __context changes;
+    if Mtime.Span.to_s now > delay_seconds then write_db_to_disk;
+    token_str := Int64.to_string (Manifest.generation (Database.manifest !Xapi_slave_db.slave_db))
   done
 
 let slave_db_backup_loop ~__context () =
   while (true) do
     try
+      debug "Starting slave db thread with clear db";
+      Xapi_slave_db.clear_db ();
       loop __context ()
     with
       e ->

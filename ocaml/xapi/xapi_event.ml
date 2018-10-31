@@ -614,8 +614,7 @@ let with_wakeup __context loc f =
   in
   let wakeup_classes = [Printf.sprintf "task/%s" (Ref.string_of _t)] in
   let wakeup_function = (fun () ->
-      if Db.is_valid_ref __context _t then
-        Db.Task.destroy ~__context ~self:_t) in
+      Db.Task.destroy ~__context ~self:_t) in
   let return = f wakeup_function wakeup_classes _t in
   wakeup_function ();
   return

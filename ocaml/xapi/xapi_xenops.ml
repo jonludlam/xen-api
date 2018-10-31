@@ -2371,62 +2371,63 @@ let events_from_xapi () =
        let token = ref "" in
        while true do
          Xapi_event.with_wakeup __context "xapi_xenops" (fun wakeup_function wakeup_classes task ->
-           trigger_xenapi_reregister := wakeup_function;
-           (* We register for events on resident_VMs only *)
-           let resident_VMs = Db.Host.get_resident_VMs ~__context ~self:localhost in
+             trigger_xenapi_reregister := wakeup_function;
+             (* We register for events on resident_VMs only *)
+             let resident_VMs = Db.Host.get_resident_VMs ~__context ~self:localhost in
 
-           let uuids = List.map (fun self -> Db.VM.get_uuid ~__context ~self) resident_VMs in
-           let cached = Mutex.execute metadata_m (fun () -> Xenops_cache.list_nolock ()) in
-           let missing_in_cache = Listext.List.set_difference uuids cached in
-           let extra_in_cache = Listext.List.set_difference cached uuids in
-           if missing_in_cache <> []
-           then error "events_from_xapi: missing from the cache: [ %s ]" (String.concat "; " missing_in_cache);
-           if extra_in_cache <> []
-           then error "events_from_xapi: extra items in the cache: [ %s ]" (String.concat "; " extra_in_cache);
+             let uuids = List.map (fun self -> Db.VM.get_uuid ~__context ~self) resident_VMs in
+             let cached = Mutex.execute metadata_m (fun () -> Xenops_cache.list_nolock ()) in
+             let missing_in_cache = Listext.List.set_difference uuids cached in
+             let extra_in_cache = Listext.List.set_difference cached uuids in
+             if missing_in_cache <> []
+             then error "events_from_xapi: missing from the cache: [ %s ]" (String.concat "; " missing_in_cache);
+             if extra_in_cache <> []
+             then error "events_from_xapi: extra items in the cache: [ %s ]" (String.concat "; " extra_in_cache);
 
-           let classes = List.map (fun x -> Printf.sprintf "VM/%s" (Ref.string_of x)) resident_VMs in
-           (* NB we re-use the old token so we don't get events we've already
+             let classes = List.map (fun x -> Printf.sprintf "VM/%s" (Ref.string_of x)) resident_VMs in
+             (* NB we re-use the old token so we don't get events we've already
                    received BUT we will not necessarily receive events for the new VMs *)
-           let classes = wakeup_classes @ classes in
-           while (Db.is_valid_ref __context task) do
-             let api_timeout = 60. in
-             let from =
-               try
-                 Event_types.parse_event_from
-                   (Xapi_slave_db.call_with_updated_context __context (Xapi_event.from ~classes ~token:!token ~timeout:api_timeout))
-               with e ->
-                 Debug.log_backtrace e (Backtrace.get e);
-                 raise e
-             in
-             if List.length from.events > 200 then warn "Warning: received more than 200 events!";
-             List.iter
-               (function
-                 | { ty = "vm"; reference = vm' } ->
-                   let vm = Ref.of_string vm' in
-                   begin
-                     try
-                       let id = id_of_vm ~__context ~self:vm in
-                       let resident_here = Db.VM.get_resident_on ~__context ~self:vm = localhost in
-                       debug "Event on VM %s; resident_here = %b" id resident_here;
-                       if resident_here
-                       then Xenopsd_metadata.update ~__context ~self:vm |> ignore
-                     with e ->
-                       if not(Db.is_valid_ref __context vm)
-                       then debug "VM %s has been removed: event on it will be ignored" (Ref.string_of vm)
-                       else begin
-                         error "Caught %s while processing XenAPI event for VM %s" (Printexc.to_string e) (Ref.string_of vm);
-                         raise e
-                       end
-                   end
-                 | { ty = "task"; reference = task_ref } as e ->
-                   if e.op = `add || e.op = `_mod then () else wakeup_function ()
-                 | _ -> warn "Received event for something we didn't register for!"
-               ) from.events;
-             token := from.token;
-             Events_from_xapi.broadcast !token;
-           done
+             let classes = wakeup_classes @ classes in
+             while (Db.is_valid_ref __context task) do
+               let api_timeout = 60. in
+               let from =
+                 try
+                   Xapi_slave_db.call_with_updated_context __context (Xapi_event.from ~classes ~token:!token ~timeout:api_timeout)
+                   |> Event_types.parse_event_from
+                 with e ->
+                   Debug.log_backtrace e (Backtrace.get e);
+                   raise e
+               in
+               if List.length from.events > 200 then warn "Warning: received more than 200 events!";
+               List.iter
+                 (function
+                   | { ty = "vm"; reference = vm' } ->
+                     let vm = Ref.of_string vm' in
+                     begin
+                       try
+                         let id = id_of_vm ~__context ~self:vm in
+                         let resident_here = Db.VM.get_resident_on ~__context ~self:vm = localhost in
+                         debug "Event on VM %s; resident_here = %b" id resident_here;
+                         if resident_here
+                         then Xenopsd_metadata.update ~__context ~self:vm |> ignore
+                       with e ->
+                         if not(Db.is_valid_ref __context vm)
+                         then debug "VM %s has been removed: event on it will be ignored" (Ref.string_of vm)
+                         else begin
+                           error "Caught %s while processing XenAPI event for VM %s" (Printexc.to_string e) (Ref.string_of vm);
+                           raise e
+                         end
+                     end
+                   | { ty = "task"; reference = task_ref } as e ->
+                     if task_ref = (Ref.string_of task) then
+                       if e.op = `add || e.op = `_mod then () else wakeup_function ()
+                   | _ -> warn "Received event for something we didn't register for!"
+                 ) from.events;
+               token := from.token;
+               Events_from_xapi.broadcast !token;
+             done
            );
-         done
+       done
     )
 
 let success_task queue_name f dbg id =

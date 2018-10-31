@@ -30,9 +30,6 @@ let sort_and_flatten l =
   let flattened = List.sort compare (List.flatten sorted) in
   String.concat ", " flattened
 
-let stat_to_string (stat:Db_cache_types.Stat.t) =
-  "{created: " ^ (Int64.to_string stat.created) ^ "; modified: " ^ (Int64.to_string stat.modified) ^ "; deleted: " ^ (Int64.to_string stat.deleted) ^ ";}"
-
 let dump db =
   Db_cache_types.TableSet.iter (fun tblname table ->
       Printf.printf "\n# TABLE: %s\n\n" tblname;
@@ -87,8 +84,6 @@ let test_db_backup () =
   let gen_changes = gen (mf changes_db) in
   Printf.printf "\nGeneration 1: %Li" gen_init;
   Printf.printf "\nGeneration 2: %Li\n" gen_changes;
-
-  (*Printf.printf "Changes: %s" (Xapi_database_backup.delta_to_string changes);*)
 
   Alcotest.(check bool) "Test the equality check" true (dbs_are_equal init_db init_db);
   Alcotest.(check bool) "Database generations are equal" true (gen_init = gen_changes);
