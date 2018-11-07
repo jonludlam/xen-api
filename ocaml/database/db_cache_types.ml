@@ -117,6 +117,7 @@ module Table = struct
              deleted : (Time.t * Time.t * string) list }
   type value = Row.t
   let get_deleted_len t = t.deleted_len
+  let get_deleted t = t.deleted
   let add g key value t = {t with rows=StringRowMap.add g key value t.rows}
   let empty = {rows=StringRowMap.empty; deleted_len = 1; deleted=[(0L,0L,"")] }
   let fold f t acc = StringRowMap.fold f t.rows acc
@@ -144,7 +145,7 @@ module Table = struct
     let rec loop xs acc = match xs with
       | (created,deleted,r)::xs ->
         let new_acc =
-          if (deleted > since) && (created <= since)
+          if (deleted >= since) && (created <= since)
           then (f r { Stat.created; modified = deleted; deleted } acc)
           else acc
         in

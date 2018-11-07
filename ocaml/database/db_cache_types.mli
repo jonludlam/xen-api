@@ -98,6 +98,7 @@ module Table : sig
       which have been recently deleted. Note this is not guaranteed to remember
       all events, so the list may be short. *)
 
+  val get_deleted : t -> (Time.t * Time.t * string) list
   val get_deleted_len : t -> int
 end
 

@@ -506,6 +506,7 @@ let from_inner __context subs from from_t deadline =
             Db_lock.with_lock (fun () -> grab_range (Context.database_of __context)) in
           if creates = [] && mods = [] && deletes = [] && messages = [] && Unix.gettimeofday () < deadline then
             begin
+              last_generation := last;
               last_msg_gen := msg_gen;
               Thread.delay 0.05;
               grab_nonempty_range ()

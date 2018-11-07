@@ -34,7 +34,6 @@ type table =
 type del_tables =
   { key:   string
   ; table: string
-  ; stat : stat
   } [@@deriving rpc]
 
 type count =
@@ -71,19 +70,53 @@ type update =
 exception Content_length_required
 let delta_to_string (d:delta) = Jsonrpc.to_string (rpc_of_delta d)
 
+(* HELPERS FROM TESTS *)
+let sort_and_flatten l =
+  let sorted = List.sort compare (List.map (List.sort compare) l) in
+  let flattened = List.sort compare (List.flatten sorted) in
+  String.concat ", " flattened
+
+let tbl_to_string (tbl:Db_cache_types.Table.t) =
+  let row_func = Db_cache_types.Row.fold (fun str stat value acc -> (str ^ (Schema.Value.marshal value)) :: acc) in
+  let lofl = Db_cache_types.Table.fold (fun str stat value acc -> (row_func value []) :: acc) tbl [] in
+  sort_and_flatten lofl
+
+let get_tables db =
+  Db_cache_types.TableSet.fold_over_recent (-2L) (fun table _ _ acc -> table::acc) (Db_cache_types.Database.tableset db) []
+
+let db_to_str db =
+  let tbl_list = (get_tables db) in
+  let tbl_t_list = List.map (fun tblname -> (Db_cache_types.TableSet.find tblname (Db_cache_types.Database.tableset db))) tbl_list in
+  let tbl_as_str_list = List.map tbl_to_string tbl_t_list in
+  String.concat ",\n " tbl_as_str_list
+
+let print_db db =
+  Printf.printf "DB: %s" (db_to_str db)
+
+let print_db_debug db =
+  debug "DB: %s" (db_to_str db)
+
+let dump db =
+  Db_cache_types.TableSet.iter (fun tblname table ->
+      debug "\n# TABLE: %s\n\n" tblname;
+      Db_cache_types.Table.iter (fun objref row ->
+          debug "## Object: %s\n" objref;
+          Db_cache_types.Row.iter (fun fldname v ->
+              debug "  %s: %s\n" fldname (Schema.Value.marshal v)) row) table) (Db_cache_types.Database.tableset db)
+
+
+(* END OF HELPERS *)
+
 (* Master Functions *)
 
 let get_del_from_table_name token ts table =
-  Table.fold_over_deleted token (fun key {created; modified; deleted} acc ->
-      ({key; table; stat={created;modified;deleted}})::acc) (TableSet.find table ts) []
+  Table.fold_over_deleted token (fun key _ acc ->
+      ({key; table})::acc) (TableSet.find table ts) []
 
 let get_deleted ~token db =
-  let tables =
-    let all =
-      let objs = List.filter (fun x -> x.Datamodel_types.gen_events) (Dm_api.objects_of_api Datamodel.all_api) in
-      List.rev_map (fun x->x.Datamodel_types.name) objs in
-    List.filter (fun table -> true) all in
-  List.concat (List.rev_map (get_del_from_table_name token (Database.tableset db)) tables)
+  let objs = Dm_api.objects_of_api Datamodel.all_api in
+  let _tables = List.rev_map (fun x->x.Datamodel_types.name) objs in
+  List.concat (List.rev_map (get_del_from_table_name token (Database.tableset db)) _tables)
 
 let check_for_updates token db =
   let ts = Database.tableset db in
@@ -143,7 +176,9 @@ let count_eq_check (c1:count) (c2:count) =
   c1.tblname = c2.tblname && c1.count = c2.count && c1.del = c2.del
 
 let count_check (c1_list: count list) (c2_list: count list) =
-  List.for_all2 count_eq_check c1_list c2_list
+  try
+    List.for_all2 count_eq_check c1_list c2_list
+  with invalid_arg -> false
 
 let flat_row_list update (rlist:row list) =
   match rlist with
@@ -161,23 +196,17 @@ let make_change_with_db_reply db (update:update) =
   | "" -> make_empty_table update.mtime update.tblname db
   | _ -> make_change update.mtime update.tblname update.objref update.fldname update.value db
 
-let make_delete_with_db_reply __context db delete =
-  if Db_cache_impl.is_valid_ref (Context.database_of __context) delete.key then
-    Db_cache_types.remove_row delete.table delete.key db
-  else
-    begin
-      debug "Not valid ref";
-      db
-    end
+let make_delete_with_db_reply db delete =
+  Db_cache_types.remove_row delete.table delete.key db
 
-let apply_changes (delta:delta) __context =
+let apply_changes (delta:delta) =
   if (Db_cache_types.Manifest.generation (Db_cache_types.Database.manifest !Xapi_slave_db.slave_db)) < delta.fresh_token then
     begin
       let new_db =
         !Xapi_slave_db.slave_db
         |> Database.set_generation delta.fresh_token
         |> (fun db -> List.fold_left make_change_with_db_reply db (flatten_table_to_update delta.tables))
-        |> (fun db -> List.fold_left (make_delete_with_db_reply __context) db delta.deletes)
+        |> (fun db -> List.fold_left (make_delete_with_db_reply) db delta.deletes)
       in
       Xapi_slave_db.slave_db := new_db;
     end;
@@ -235,7 +264,7 @@ let loop ~__context () =
               delta_of_rpc (Jsonrpc.of_string res)
            )
         ) in
-    Mutex.execute Xapi_slave_db.slave_db_mutex (fun () -> apply_changes changes __context);
+    Mutex.execute Xapi_slave_db.slave_db_mutex (fun () -> apply_changes changes);
     handle_notifications __context changes;
     if Mtime.Span.to_s now > delay_seconds then write_db_to_disk;
     token_str := Int64.to_string (Manifest.generation (Database.manifest !Xapi_slave_db.slave_db))
