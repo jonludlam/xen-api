@@ -145,7 +145,7 @@ module Table = struct
     let rec loop xs acc = match xs with
       | (created,deleted,r)::xs ->
         let new_acc =
-          if (deleted >= since) && (created <= since)
+          if (deleted > since) && (created <= since)
           then (f r { Stat.created; modified = deleted; deleted } acc)
           else acc
         in

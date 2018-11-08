@@ -44,6 +44,7 @@ type count =
 
 type delta =
   { fresh_token: int64
+  ; last_event_token: int64
   ; tables :     table list
   ; deletes :    del_tables list
   ; counts : count list
@@ -69,43 +70,6 @@ type update =
 
 exception Content_length_required
 let delta_to_string (d:delta) = Jsonrpc.to_string (rpc_of_delta d)
-
-(* HELPERS FROM TESTS *)
-let sort_and_flatten l =
-  let sorted = List.sort compare (List.map (List.sort compare) l) in
-  let flattened = List.sort compare (List.flatten sorted) in
-  String.concat ", " flattened
-
-let tbl_to_string (tbl:Db_cache_types.Table.t) =
-  let row_func = Db_cache_types.Row.fold (fun str stat value acc -> (str ^ (Schema.Value.marshal value)) :: acc) in
-  let lofl = Db_cache_types.Table.fold (fun str stat value acc -> (row_func value []) :: acc) tbl [] in
-  sort_and_flatten lofl
-
-let get_tables db =
-  Db_cache_types.TableSet.fold_over_recent (-2L) (fun table _ _ acc -> table::acc) (Db_cache_types.Database.tableset db) []
-
-let db_to_str db =
-  let tbl_list = (get_tables db) in
-  let tbl_t_list = List.map (fun tblname -> (Db_cache_types.TableSet.find tblname (Db_cache_types.Database.tableset db))) tbl_list in
-  let tbl_as_str_list = List.map tbl_to_string tbl_t_list in
-  String.concat ",\n " tbl_as_str_list
-
-let print_db db =
-  Printf.printf "DB: %s" (db_to_str db)
-
-let print_db_debug db =
-  debug "DB: %s" (db_to_str db)
-
-let dump db =
-  Db_cache_types.TableSet.iter (fun tblname table ->
-      debug "\n# TABLE: %s\n\n" tblname;
-      Db_cache_types.Table.iter (fun objref row ->
-          debug "## Object: %s\n" objref;
-          Db_cache_types.Row.iter (fun fldname v ->
-              debug "  %s: %s\n" fldname (Schema.Value.marshal v)) row) table) (Db_cache_types.Database.tableset db)
-
-
-(* END OF HELPERS *)
 
 (* Master Functions *)
 
@@ -140,7 +104,9 @@ let object_count db =
 let get_delta __context token =
   let db = Db_ref.get_database (Context.database_of __context) in
   Mutex.execute Db_lock.dbcache_mutex (fun () ->
-      {fresh_token=Manifest.generation (Database.manifest db);
+      let t = Manifest.generation (Database.manifest db) in
+      {fresh_token=t;
+       last_event_token=Int64.pred t;
        tables=(check_for_updates token db);
        deletes=(get_deleted token db);
        counts=(object_count db)})
@@ -168,7 +134,7 @@ let make_change mtime tblname objref fldname newval =
   |> Database.update
 
 let make_empty_table mtime tblname =
-  (fun _ -> Table.empty)
+  (fun t -> if t = Table.empty then Table.empty else t)
   |> TableSet.update mtime tblname Table.empty
   |> Database.update
 
@@ -267,7 +233,7 @@ let loop ~__context () =
     Mutex.execute Xapi_slave_db.slave_db_mutex (fun () -> apply_changes changes);
     handle_notifications __context changes;
     if Mtime.Span.to_s now > delay_seconds then write_db_to_disk;
-    token_str := Int64.to_string (Manifest.generation (Database.manifest !Xapi_slave_db.slave_db))
+    token_str := Int64.to_string changes.last_event_token
   done
 
 let slave_db_backup_loop ~__context () =
