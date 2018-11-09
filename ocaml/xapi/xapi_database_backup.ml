@@ -39,7 +39,6 @@ type del_tables =
 type count =
   { tblname:string
   ; count:  int
-  ; del:    int
   } [@@deriving rpc]
 
 type delta =
@@ -71,6 +70,11 @@ type update =
 exception Content_length_required
 let delta_to_string (d:delta) = Jsonrpc.to_string (rpc_of_delta d)
 
+let get_gen db =
+  db
+  |> Db_cache_types.Database.manifest
+  |> Db_cache_types.Manifest.generation
+
 (* Master Functions *)
 
 let get_del_from_table_name token ts table =
@@ -96,7 +100,7 @@ let get_table_list db =
 
 let counter db table =
   let t = Db_cache_types.TableSet.find table (Db_cache_types.Database.tableset db) in
-  {tblname=table; count=0; del=(Db_cache_types.Table.get_deleted_len t)}
+  {tblname=table; count=Db_cache_types.Table.fold (fun _ _ _ acc -> succ(acc)) t 0;}
 
 let object_count db =
   List.rev_map (counter db) (get_table_list db)
@@ -134,12 +138,12 @@ let make_change mtime tblname objref fldname newval =
   |> Database.update
 
 let make_empty_table mtime tblname =
-  (fun t -> if t = Table.empty then Table.empty else t)
+  (fun t -> t)
   |> TableSet.update mtime tblname Table.empty
   |> Database.update
 
 let count_eq_check (c1:count) (c2:count) =
-  c1.tblname = c2.tblname && c1.count = c2.count && c1.del = c2.del
+  c1.tblname = c2.tblname && c1.count = c2.count
 
 let count_check (c1_list: count list) (c2_list: count list) =
   try
@@ -231,9 +235,13 @@ let loop ~__context () =
            )
         ) in
     Mutex.execute Xapi_slave_db.slave_db_mutex (fun () -> apply_changes changes);
-    handle_notifications __context changes;
+    if (count_check (object_count !Xapi_slave_db.slave_db) changes.counts) then
+        handle_notifications __context changes;
     if Mtime.Span.to_s now > delay_seconds then write_db_to_disk;
-    token_str := Int64.to_string changes.last_event_token
+    if changes.last_event_token > (get_gen !Xapi_slave_db.slave_db) then begin
+      token_str := Int64.to_string (get_gen !Xapi_slave_db.slave_db);
+    end else
+      token_str := Int64.to_string changes.last_event_token
   done
 
 let slave_db_backup_loop ~__context () =

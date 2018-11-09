@@ -294,13 +294,14 @@ let test_db_events_with_session () =
 
 let test_db_counts () =
   Xapi_slave_db.clear_db ();
+
   let __context = make_test_database () in
-
   let _vma = make_vm ~__context ~name_label:"vma" () in
-
   let _init_db = Db_ref.get_database (Context.database_of __context) in
-
   let changes = Xapi_database_backup.get_delta __context (-2L) in
+
+  Printf.printf "Changes: %s\n\n" (Xapi_database_backup.delta_to_string changes);
+
   Xapi_database_backup.apply_changes changes;
   let _changes_db = !(Xapi_slave_db.slave_db) in
   let token = changes.last_event_token in

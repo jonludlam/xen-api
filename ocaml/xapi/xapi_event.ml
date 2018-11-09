@@ -472,7 +472,6 @@ let from_inner __context subs from from_t deadline =
             ) (Db_cache_types.TableSet.find table tableset) acc
        ) ([],[],[],!last_generation) tables) in
 
-  let _last = ref 0L in
   let content = ref { msg_gen = 0L; messages = [];tableset = Db_cache_types.TableSet.empty;creates = []; mods = []; deletes = []; last = 0L;} in
   if Context.has_session_id __context then
     begin
@@ -496,7 +495,6 @@ let from_inner __context subs from from_t deadline =
           ) in
       last_generation := last;
       content := {msg_gen; messages; tableset; creates; mods; deletes; last;};
-      _last := last;
     end
   else
     begin
@@ -516,7 +514,6 @@ let from_inner __context subs from from_t deadline =
         grab_nonempty_range () in
       last_generation := last;
       content := {msg_gen; messages; tableset; creates; mods; deletes; last;};
-      _last := last;
     end;
 
   let event_of op ?snapshot (table, objref, time) = {
@@ -558,7 +555,7 @@ let from_inner __context subs from from_t deadline =
 
   {
     events; valid_ref_counts;
-    token = Token.to_string (!_last,!content.msg_gen);
+    token = Token.to_string (!content.last,!content.msg_gen);
   }
 
 let from ~__context ~classes ~token ~timeout =
