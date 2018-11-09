@@ -202,9 +202,13 @@ let send_notification __context reason p =
     | Some record -> Db_action_helper.events_notify ~snapshot:record p.tbl reason p.row;
   end
 
-let handle_notifications __context (d:delta) =
-  List.iter ((fun __context (d:del_tables) -> send_notification __context "del" {tbl=d.table; row=d.key}) __context) d.deletes;
-  List.iter (send_notification __context "mod") (info_extract d.tables)
+let handle_notifications __context token =
+  let db = !Xapi_slave_db.slave_db in
+  let deletes = get_deleted token db in
+  let tables = check_for_updates token db in
+
+  List.iter (fun (d:del_tables) -> Db_action_helper.events_notify d.table "del" d.key) deletes;
+  List.iter (send_notification __context "mod") (info_extract tables)
 
 let write_db_to_disk =
   if !Xapi_globs.slave_dbs then
@@ -235,8 +239,7 @@ let loop ~__context () =
            )
         ) in
     Mutex.execute Xapi_slave_db.slave_db_mutex (fun () -> apply_changes changes);
-    if (count_check (object_count !Xapi_slave_db.slave_db) changes.counts) then
-        handle_notifications __context changes;
+    Mutex.execute Xapi_slave_db.slave_db_mutex (fun () -> handle_notifications __context (Int64.of_string!token_str));
     if Mtime.Span.to_s now > delay_seconds then write_db_to_disk;
     if changes.last_event_token > (get_gen !Xapi_slave_db.slave_db) then begin
       token_str := Int64.to_string (get_gen !Xapi_slave_db.slave_db);

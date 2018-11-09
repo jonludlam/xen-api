@@ -612,7 +612,10 @@ let with_wakeup __context loc f =
   in
   let wakeup_classes = [Printf.sprintf "task/%s" (Ref.string_of _t)] in
   let wakeup_function = (fun () ->
-      Db.Task.destroy ~__context ~self:_t) in
+      try
+        Db.Task.destroy ~__context ~self:_t
+      with Db_exn.DBCache_NotFound _ -> debug "Event thread has already woken up"
+    ) in
   let return = f wakeup_function wakeup_classes _t in
   wakeup_function ();
   return
