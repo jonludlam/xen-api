@@ -57,10 +57,11 @@ type edits =
 type pair =
   { tbl: string
   ; row: string
+  ; rowstat:stat
   }
 
 type update =
-  { mtime: int64
+  { stat:stat
   ; tblname:string
   ; objref:string
   ; fldname:string
@@ -130,16 +131,30 @@ let handler (req: Request.t) s _ =
 
 (* Slave Functions *)
 
-let make_change mtime tblname objref fldname newval =
+let apply time tblname objref fldname newval =
   (fun _ -> newval)
-  |> Row.update mtime fldname newval
-  |> Table.update mtime objref Row.empty
-  |> TableSet.update mtime tblname Table.empty
+  |> Row.update time fldname newval
+  |> Table.update time objref Row.empty
+  |> TableSet.update time tblname Table.empty
   |> Database.update
 
-let make_empty_table mtime tblname =
+let make_change __context stat tblname objref fldname newval db =
+  let record = (Eventgen.find_get_record tblname ~__context ~self:objref) () in
+  let return_db = ref db in
+  begin match record with
+    | None ->
+      (* add, or add + mod *)
+      return_db := apply stat.created tblname objref fldname newval db;
+      if stat.created < stat.modified then
+        return_db := apply stat.modified tblname objref fldname newval !return_db
+    | Some _ ->
+      return_db := apply stat.created tblname objref fldname newval db
+  end;
+  !return_db
+
+let make_empty_table stat tblname =
   (fun t -> t)
-  |> TableSet.update mtime tblname Table.empty
+  |> TableSet.update stat.created tblname Table.empty
   |> Database.update
 
 let count_eq_check (c1:count) (c2:count) =
@@ -155,27 +170,27 @@ let flat_row_list update (rlist:row list) =
   | [] -> [update]
   | _ -> List.fold_left (fun acc (r:row) ->
       (List.rev_map (fun (f:field) ->
-           {update with mtime=f.stat.modified; objref=r.objref; fldname=f.fldname; value=f.value;}) r.fields) @ acc) [] rlist
+           {update with stat=f.stat; objref=r.objref; fldname=f.fldname; value=f.value;}) r.fields) @ acc) [] rlist
 
 let flatten_table_to_update (tbllist:table list) =
   List.concat (List.rev_map (fun (t:table) ->
-      (flat_row_list ({mtime=t.stat.modified; tblname=t.tblname; objref=""; fldname=""; value=Schema.Value.String "";})) t.rows) tbllist)
+      (flat_row_list ({stat=t.stat; tblname=t.tblname; objref=""; fldname=""; value=Schema.Value.String "";})) t.rows) tbllist)
 
-let make_change_with_db_reply db (update:update) =
+let make_change_with_db_reply __context db (update:update) =
   match update.fldname with
-  | "" -> make_empty_table update.mtime update.tblname db
-  | _ -> make_change update.mtime update.tblname update.objref update.fldname update.value db
+  | "" -> make_empty_table update.stat update.tblname db
+  | _ -> make_change __context update.stat update.tblname update.objref update.fldname update.value db
 
 let make_delete_with_db_reply db delete =
   Db_cache_types.remove_row delete.table delete.key db
 
-let apply_changes (delta:delta) =
+let apply_changes __context (delta:delta) =
   if (Db_cache_types.Manifest.generation (Db_cache_types.Database.manifest !Xapi_slave_db.slave_db)) < delta.fresh_token then
     begin
       let new_db =
         !Xapi_slave_db.slave_db
         |> Database.set_generation delta.fresh_token
-        |> (fun db -> List.fold_left make_change_with_db_reply db (flatten_table_to_update delta.tables))
+        |> (fun db -> List.fold_left (make_change_with_db_reply __context) db (flatten_table_to_update delta.tables))
         |> (fun db -> List.fold_left (make_delete_with_db_reply) db delta.deletes)
       in
       Xapi_slave_db.slave_db := new_db;
@@ -189,18 +204,28 @@ let apply_changes (delta:delta) =
     end
 
 let fold_row tblname (rlist:row list) =
-  List.fold_left (fun acc (r:row) -> [{tbl=tblname; row=r.objref}] @ acc) [] rlist
+  List.fold_left (fun acc (r:row) -> [{tbl=tblname; row=r.objref; rowstat=r.stat}] @ acc) [] rlist
 
 let info_extract (tlist:table list) =
   List.fold_left (fun pl (t:table) -> (fold_row t.tblname t.rows) @ pl) [] tlist
 
-let send_notification __context reason p =
+let send_notification __context token p =
   let __context = Xapi_slave_db.update_context_db __context in
-  let record = (Eventgen.find_get_record p.tbl ~__context ~self:p.row) () in
-  begin match record with
-    | None -> debug "Could not send %s event for %s in %s table" reason p.row p.tbl;
-    | Some record -> Db_action_helper.events_notify ~snapshot:record p.tbl reason p.row;
+  let reasons = ref [] in
+  if p.rowstat.created = p.rowstat.modified then
+    reasons := ["add"];
+  if token < p.rowstat.created && p.rowstat.created < p.rowstat.modified then begin
+    (* Created, then modified *)
+    reasons := ["add"; "mod";];
   end
+  else
+    reasons := ["mod"];
+
+  List.iter (fun r -> let record = (Eventgen.find_get_record p.tbl ~__context ~self:p.row) () in
+              begin match record with
+                | None -> debug "Could not send %s event for %s in %s table" r p.row p.tbl;
+                | Some record -> Db_action_helper.events_notify ~snapshot:record p.tbl r p.row;
+              end) !reasons
 
 let handle_notifications __context token =
   let db = !Xapi_slave_db.slave_db in
@@ -208,7 +233,7 @@ let handle_notifications __context token =
   let tables = check_for_updates token db in
 
   List.iter (fun (d:del_tables) -> Db_action_helper.events_notify d.table "del" d.key) deletes;
-  List.iter (send_notification __context "mod") (info_extract tables)
+  List.iter (send_notification __context token) (info_extract tables)
 
 let write_db_to_disk =
   if !Xapi_globs.slave_dbs then
@@ -238,7 +263,7 @@ let loop ~__context () =
               delta_of_rpc (Jsonrpc.of_string res)
            )
         ) in
-    Mutex.execute Xapi_slave_db.slave_db_mutex (fun () -> apply_changes changes);
+    Mutex.execute Xapi_slave_db.slave_db_mutex (fun () -> apply_changes __context changes);
     Mutex.execute Xapi_slave_db.slave_db_mutex (fun () -> handle_notifications __context (Int64.of_string!token_str));
     if Mtime.Span.to_s now > delay_seconds then write_db_to_disk;
     if changes.last_event_token > (get_gen !Xapi_slave_db.slave_db) then begin
