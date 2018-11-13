@@ -73,18 +73,19 @@ let delta_to_string (d:delta) = Jsonrpc.to_string (rpc_of_delta d)
 
 let get_gen db =
   db
-  |> Db_cache_types.Database.manifest
-  |> Db_cache_types.Manifest.generation
+  |> Database.manifest
+  |> Manifest.generation
 
 (* Master Functions *)
 
+let get_table_list db =
+  TableSet.fold_over_recent (-2L) (fun table stat value acc -> table::acc) (Database.tableset db) []
+
 let get_del_from_table_name token ts table =
-  Table.fold_over_deleted token (fun key _ acc ->
-      ({key; table})::acc) (TableSet.find table ts) []
+  Table.fold_over_deleted token (fun key _ acc -> ({key; table})::acc) (TableSet.find table ts) []
 
 let get_deleted ~token db =
-  let objs = Dm_api.objects_of_api Datamodel.all_api in
-  let _tables = List.rev_map (fun x->x.Datamodel_types.name) objs in
+  let _tables = get_table_list db in
   List.concat (List.rev_map (get_del_from_table_name token (Database.tableset db)) _tables)
 
 let check_for_updates token db =
@@ -96,12 +97,9 @@ let check_for_updates token db =
   TableSet.fold_over_recent token (fun tblname {created; modified; deleted} value acc ->
       {tblname; stat={created;modified;deleted}; rows=(handle_table value)}::acc) ts []
 
-let get_table_list db =
-  Db_cache_types.TableSet.fold_over_recent (-2L) (fun table stat value acc -> table::acc) (Db_cache_types.Database.tableset db) []
-
 let counter db table =
-  let t = Db_cache_types.TableSet.find table (Db_cache_types.Database.tableset db) in
-  {tblname=table; count=Db_cache_types.Table.fold (fun _ _ _ acc -> succ(acc)) t 0;}
+  let t = TableSet.find table (Database.tableset db) in
+  {tblname=table; count=Table.fold (fun _ _ _ acc -> succ(acc)) t 0;}
 
 let object_count db =
   List.rev_map (counter db) (get_table_list db)
@@ -138,19 +136,26 @@ let apply time tblname objref fldname newval =
   |> TableSet.update time tblname Table.empty
   |> Database.update
 
-let make_change __context stat tblname objref fldname newval db =
-  let record = (Eventgen.find_get_record tblname ~__context ~self:objref) () in
-  let return_db = ref db in
-  begin match record with
-    | None ->
-      (* add, or add + mod *)
-      return_db := apply stat.created tblname objref fldname newval db;
-      if stat.created < stat.modified then
-        return_db := apply stat.modified tblname objref fldname newval !return_db
-    | Some _ ->
-      return_db := apply stat.created tblname objref fldname newval db
-  end;
-  !return_db
+let make_change old_token stat tblname objref fldname newval db =
+  if TableSet.mem tblname (Database.tableset db) then begin
+    if (Table.mem objref (TableSet.find tblname (Database.tableset db))) then
+      apply stat.modified tblname objref fldname newval db
+    else
+      begin
+        if stat.created = stat.modified then
+          apply stat.created tblname objref fldname newval db
+        else
+          begin
+            if old_token < stat.created && stat.created < stat.modified then
+              apply stat.created tblname objref fldname newval db
+              |> apply stat.modified tblname objref fldname newval
+            else
+              apply stat.modified tblname objref fldname newval db;
+          end
+      end
+  end
+  else
+    apply stat.created tblname objref fldname newval db
 
 let make_empty_table stat tblname =
   (fun t -> t)
@@ -176,21 +181,21 @@ let flatten_table_to_update (tbllist:table list) =
   List.concat (List.rev_map (fun (t:table) ->
       (flat_row_list ({stat=t.stat; tblname=t.tblname; objref=""; fldname=""; value=Schema.Value.String "";})) t.rows) tbllist)
 
-let make_change_with_db_reply __context db (update:update) =
+let make_change_with_db_reply old_token db (update:update) =
   match update.fldname with
   | "" -> make_empty_table update.stat update.tblname db
-  | _ -> make_change __context update.stat update.tblname update.objref update.fldname update.value db
+  | _ -> make_change old_token update.stat update.tblname update.objref update.fldname update.value db
 
 let make_delete_with_db_reply db delete =
-  Db_cache_types.remove_row delete.table delete.key db
+  remove_row delete.table delete.key db
 
-let apply_changes __context (delta:delta) =
-  if (Db_cache_types.Manifest.generation (Db_cache_types.Database.manifest !Xapi_slave_db.slave_db)) < delta.fresh_token then
+let apply_changes (delta:delta) old_token =
+  if (Manifest.generation (Database.manifest !Xapi_slave_db.slave_db)) < delta.fresh_token then
     begin
       let new_db =
         !Xapi_slave_db.slave_db
         |> Database.set_generation delta.fresh_token
-        |> (fun db -> List.fold_left (make_change_with_db_reply __context) db (flatten_table_to_update delta.tables))
+        |> (fun db -> List.fold_left (make_change_with_db_reply old_token) db (flatten_table_to_update delta.tables))
         |> (fun db -> List.fold_left (make_delete_with_db_reply) db delta.deletes)
       in
       Xapi_slave_db.slave_db := new_db;
@@ -263,8 +268,8 @@ let loop ~__context () =
               delta_of_rpc (Jsonrpc.of_string res)
            )
         ) in
-    Mutex.execute Xapi_slave_db.slave_db_mutex (fun () -> apply_changes __context changes);
-    Mutex.execute Xapi_slave_db.slave_db_mutex (fun () -> handle_notifications __context (Int64.of_string!token_str));
+    Mutex.execute Xapi_slave_db.slave_db_mutex (fun () -> apply_changes changes (Int64.of_string !token_str));
+    Mutex.execute Xapi_slave_db.slave_db_mutex (fun () -> handle_notifications __context (Int64.of_string !token_str));
     if Mtime.Span.to_s now > delay_seconds then write_db_to_disk;
     if changes.last_event_token > (get_gen !Xapi_slave_db.slave_db) then begin
       token_str := Int64.to_string (get_gen !Xapi_slave_db.slave_db);
