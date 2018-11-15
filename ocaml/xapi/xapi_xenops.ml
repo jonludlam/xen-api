@@ -2420,7 +2420,9 @@ let events_from_xapi () =
                      end
                    | { ty = "task"; reference = task_ref } as e ->
                      if task_ref = (Ref.string_of task) then
-                       begin if e.op = `add then () else wakeup_function () end
+                         if e.op = `add then () else wakeup_function ()
+                     else
+                       debug "Received event for some other task";
                    | _ -> warn "Received event for something we didn't register for!"
                  ) from.events;
                token := from.token;

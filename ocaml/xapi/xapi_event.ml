@@ -610,7 +610,8 @@ let with_wakeup __context loc f =
     Context.make ~task_description:"Task for event from loop" ~subtask_of ~task_in_database:true label
     |> Context.get_task_id
   in
-  let wakeup_classes = [Printf.sprintf "task/%s" (Ref.string_of _t)] in
+  let class_str = ("task/" ^ (Ref.string_of _t)) in
+  let wakeup_classes = [class_str] in
   let wakeup_function = (fun () ->
       try
         Db.Task.destroy ~__context ~self:_t

@@ -42,8 +42,14 @@ let dump db =
           Db_cache_types.Row.iter (fun fldname v ->
               Printf.printf "  %s: %s\n" fldname (Schema.Value.marshal v)) row) table) (Db_cache_types.Database.tableset db)
 
+let stat_to_string (stat:Db_cache_types.Stat.t) =
+  "{created: " ^ (Int64.to_string stat.created) ^
+  "; modified: " ^ (Int64.to_string stat.modified) ^
+  "; deleted: " ^ (Int64.to_string stat.deleted) ^ ";}"
+
+
 let tbl_to_string (tbl:Db_cache_types.Table.t) =
-  let row_func = Db_cache_types.Row.fold (fun str stat value acc -> (str ^ (Schema.Value.marshal value)) :: acc) in
+  let row_func = Db_cache_types.Row.fold (fun str stat value acc -> (str ^ (stat_to_string stat) ^ (Schema.Value.marshal value)) :: acc) in
   let lofl = Db_cache_types.Table.fold (fun str stat value acc -> (row_func value []) :: acc) tbl [] in
   sort_and_flatten lofl
 
@@ -79,7 +85,7 @@ let test_db_backup () =
   let init_db = Db_ref.get_database (Context.database_of __context) in
 
   let changes = Xapi_database_backup.get_delta __context (-2L) in
-  Xapi_database_backup.apply_changes changes (-2L);
+  Xapi_database_backup.apply_changes changes;
   let changes_db = !(Xapi_slave_db.slave_db) in
 
   let gen_init = get_gen init_db in
@@ -102,7 +108,7 @@ let test_db_with_vm () =
 
   let init_db = Db_ref.get_database (Context.database_of __context) in
   let changes = Xapi_database_backup.get_delta __context (-2L) in
-  Xapi_database_backup.apply_changes changes (-2L);
+  Xapi_database_backup.apply_changes changes;
   let changes_db = !(Xapi_slave_db.slave_db) in
 
   Printf.printf "Changes: %s" (Xapi_database_backup.delta_to_string changes);
@@ -119,7 +125,7 @@ let test_db_with_name_change () =
   Db.VM.set_name_description __context vm "NewName";
   let init_db = Db_ref.get_database (Context.database_of __context) in
   let changes = Xapi_database_backup.get_delta __context (-2L) in
-  Xapi_database_backup.apply_changes changes (-2L);
+  Xapi_database_backup.apply_changes changes;
   let changes_db = !(Xapi_slave_db.slave_db) in
 
   Alcotest.(check bool) "changes are reflected in both tables' generations" true (get_gen init_db = get_gen changes_db);
@@ -135,7 +141,7 @@ let test_db_with_multiple_changes () =
   Db.VM.set_name_description __context vm "NewName1";
   let init_db = Db_ref.get_database (Context.database_of __context) in
   let changes = Xapi_database_backup.get_delta __context (-2L) in
-  Xapi_database_backup.apply_changes changes (-2L);
+  Xapi_database_backup.apply_changes changes;
   let changes_db = !(Xapi_slave_db.slave_db) in
 
   Alcotest.(check bool) "First vm created - generations equal" true (get_gen init_db = get_gen changes_db);
@@ -145,7 +151,7 @@ let test_db_with_multiple_changes () =
   Db.VM.set_name_description __context vm2 "NewName2";
   let init_db = Db_ref.get_database (Context.database_of __context) in
   let changes = Xapi_database_backup.get_delta __context (-2L) in
-  Xapi_database_backup.apply_changes changes (-2L);
+  Xapi_database_backup.apply_changes changes;
   let changes_db = !(Xapi_slave_db.slave_db) in
 
   Alcotest.(check bool) "Second vm created - generations equal" true (get_gen init_db = get_gen changes_db);
@@ -155,7 +161,7 @@ let test_db_with_multiple_changes () =
   Db.VM.set_name_description __context vm3 "NewName3";
   let init_db = Db_ref.get_database (Context.database_of __context) in
   let changes = Xapi_database_backup.get_delta __context (-2L) in
-  Xapi_database_backup.apply_changes changes (-2L);
+  Xapi_database_backup.apply_changes changes;
   let changes_db = !(Xapi_slave_db.slave_db) in
 
   Alcotest.(check bool) "Third vm created - generations equal" true (get_gen init_db = get_gen changes_db);
@@ -171,7 +177,7 @@ let test_db_events () =
   let vma = make_vm __context () in
   let _init_db = Db_ref.get_database (Context.database_of __context) in
   let changes = Xapi_database_backup.get_delta __context (-2L) in
-  Xapi_database_backup.apply_changes changes (-2L);
+  Xapi_database_backup.apply_changes changes;
   let _changes_db = !(Xapi_slave_db.slave_db) in
 
   let evs = Xapi_event.from __context ["vm"] "" 30.0 |> parse_event_from in
@@ -207,7 +213,7 @@ let test_db_events_through_slave_db () =
   let vma = make_vm __context () in
   let _init_db = Db_ref.get_database (Context.database_of __context) in
   let changes = Xapi_database_backup.get_delta __context (-2L) in
-  Xapi_database_backup.apply_changes changes (-2L);
+  Xapi_database_backup.apply_changes changes;
   let _changes_db = !(Xapi_slave_db.slave_db) in
 
   let classes = ["vm"] in
@@ -237,7 +243,7 @@ let test_db_events_without_session () =
   let vma = make_vm __context () in
   let _init_db = Db_ref.get_database (Context.database_of __context) in
   let changes = Xapi_database_backup.get_delta __context (-2L) in
-  Xapi_database_backup.apply_changes changes (-2L);
+  Xapi_database_backup.apply_changes changes;
   let _changes_db = !(Xapi_slave_db.slave_db) in
   Alcotest.(check bool) "Check that we don't have a session" false (Context.has_session_id __context);
 
@@ -269,7 +275,7 @@ let test_db_events_with_session () =
   let vma = make_vm __context () in
   let _init_db = Db_ref.get_database (Context.database_of __context) in
   let changes = Xapi_database_backup.get_delta __context (-2L) in
-  Xapi_database_backup.apply_changes changes (-2L);
+  Xapi_database_backup.apply_changes changes;
   let _changes_db = !(Xapi_slave_db.slave_db) in
 
   let classes = ["vm"] in
@@ -302,7 +308,7 @@ let test_db_counts () =
 
   Printf.printf "Changes: %s\n\n" (Xapi_database_backup.delta_to_string changes);
 
-  Xapi_database_backup.apply_changes changes (-2L);
+  Xapi_database_backup.apply_changes changes;
   let _changes_db = !(Xapi_slave_db.slave_db) in
   let token = changes.last_event_token in
 
@@ -314,7 +320,7 @@ let test_db_counts () =
   Db.VM.destroy ~__context ~self:_vma;
   let _init_db = Db_ref.get_database (Context.database_of __context) in
   let changes = Xapi_database_backup.get_delta __context token in
-  Xapi_database_backup.apply_changes changes (-2L);
+  Xapi_database_backup.apply_changes changes;
   let _changes_db = !(Xapi_slave_db.slave_db) in
   let _init_db = Db_ref.get_database (Context.database_of __context) in
 
@@ -335,7 +341,7 @@ let test_db_counts_large () =
   let _init_db = Db_ref.get_database (Context.database_of __context) in
 
   let changes = Xapi_database_backup.get_delta __context (-2L) in
-  Xapi_database_backup.apply_changes changes (-2L);
+  Xapi_database_backup.apply_changes changes;
   let _changes_db = !(Xapi_slave_db.slave_db) in
   let token = changes.last_event_token in
 
@@ -348,7 +354,7 @@ let test_db_counts_large () =
 
   let _init_db = Db_ref.get_database (Context.database_of __context) in
   let changes = Xapi_database_backup.get_delta __context token in
-  Xapi_database_backup.apply_changes changes token;
+  Xapi_database_backup.apply_changes changes;
   let _changes_db = !(Xapi_slave_db.slave_db) in
   let token = changes.last_event_token in
   let _init_db = Db_ref.get_database (Context.database_of __context) in
@@ -361,7 +367,7 @@ let test_db_counts_large () =
 
   let _init_db = Db_ref.get_database (Context.database_of __context) in
   let changes = Xapi_database_backup.get_delta __context token in
-  Xapi_database_backup.apply_changes changes token;
+  Xapi_database_backup.apply_changes changes;
   let _changes_db = !(Xapi_slave_db.slave_db) in
   let _init_db = Db_ref.get_database (Context.database_of __context) in
 

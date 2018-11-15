@@ -36,17 +36,12 @@ type del_tables =
   ; table: string
   } [@@deriving rpc]
 
-type count =
-  { tblname:string
-  ; count:  int
-  } [@@deriving rpc]
-
 type delta =
   { fresh_token: int64
   ; last_event_token: int64
   ; tables :     table list
   ; deletes :    del_tables list
-  ; counts : count list
+  ; counts : (string * int) list
   } [@@deriving rpc]
 
 type edits =
@@ -85,8 +80,7 @@ let get_del_from_table_name token ts table =
   Table.fold_over_deleted token (fun key _ acc -> ({key; table})::acc) (TableSet.find table ts) []
 
 let get_deleted ~token db =
-  let _tables = get_table_list db in
-  List.concat (List.rev_map (get_del_from_table_name token (Database.tableset db)) _tables)
+  List.concat (List.rev_map (get_del_from_table_name token (Database.tableset db)) (get_table_list db))
 
 let check_for_updates token db =
   let ts = Database.tableset db in
@@ -98,8 +92,7 @@ let check_for_updates token db =
       {tblname; stat={created;modified;deleted}; rows=(handle_table value)}::acc) ts []
 
 let counter db table =
-  let t = TableSet.find table (Database.tableset db) in
-  {tblname=table; count=Table.fold (fun _ _ _ acc -> succ(acc)) t 0;}
+  (table, (Table.fold (fun _ _ _ acc -> succ(acc)) (TableSet.find table (Database.tableset db)) 0))
 
 let object_count db =
   List.rev_map (counter db) (get_table_list db)
@@ -118,7 +111,7 @@ let handler (req: Request.t) s _ =
   req.Http.Request.close <- true;
   try
     let token = Generation.of_string (snd (List.find (fun (x,y) -> x = "token") req.query)) in
-    Xapi_http.with_context "Database backup" req s (fun __context ->
+    Server_helpers.exec_with_new_task "Database backup" ~task_in_database:false (fun __context ->
         token
         |> get_delta __context
         |> rpc_of_delta
@@ -136,38 +129,44 @@ let apply time tblname objref fldname newval =
   |> TableSet.update time tblname Table.empty
   |> Database.update
 
-let make_change old_token stat tblname objref fldname newval db =
+let make_change stat tblname objref fldname newval db =
   if TableSet.mem tblname (Database.tableset db) then begin
     if (Table.mem objref (TableSet.find tblname (Database.tableset db))) then
-      apply stat.modified tblname objref fldname newval db
+      begin
+        if (Row.mem fldname (Table.find objref (TableSet.find tblname (Database.tableset db)))) then
+            apply stat.modified tblname objref fldname newval db
+        else
+          begin
+            if stat.created = stat.modified then
+              apply stat.created tblname objref fldname newval db
+            else begin
+              apply stat.created tblname objref fldname (Schema.Value.String (tblname^objref)) db
+              |> apply stat.modified tblname objref fldname newval
+            end
+          end
+      end
     else
       begin
         if stat.created = stat.modified then
           apply stat.created tblname objref fldname newval db
         else
           begin
-            if old_token < stat.created && stat.created < stat.modified then
-              apply stat.created tblname objref fldname newval db
-              |> apply stat.modified tblname objref fldname newval
-            else
-              apply stat.modified tblname objref fldname newval db;
+            apply stat.created tblname objref fldname (Schema.Value.String (tblname^objref)) db
+            |> apply stat.modified tblname objref fldname newval
           end
       end
   end
   else
-    apply stat.created tblname objref fldname newval db
+      apply stat.created tblname objref fldname newval db
 
 let make_empty_table stat tblname =
   (fun t -> t)
   |> TableSet.update stat.created tblname Table.empty
   |> Database.update
 
-let count_eq_check (c1:count) (c2:count) =
-  c1.tblname = c2.tblname && c1.count = c2.count
-
-let count_check (c1_list: count list) (c2_list: count list) =
+let count_check (c1_list: (string * int) list) (c2_list: (string * int) list) =
   try
-    List.for_all2 count_eq_check c1_list c2_list
+    List.for_all2 (fun (a,b) (c,d) -> a=c && b=d) c1_list c2_list
   with invalid_arg -> false
 
 let flat_row_list update (rlist:row list) =
@@ -175,28 +174,31 @@ let flat_row_list update (rlist:row list) =
   | [] -> [update]
   | _ -> List.fold_left (fun acc (r:row) ->
       (List.rev_map (fun (f:field) ->
-           {update with stat=f.stat; objref=r.objref; fldname=f.fldname; value=f.value;}) r.fields) @ acc) [] rlist
+           {{update with stat=r.stat} with stat=f.stat; objref=r.objref; fldname=f.fldname; value=f.value;}) r.fields) @ acc) [] rlist
+
+let compare_by_modified u1 u2 =
+  Int64.compare u1.stat.modified u2.stat.modified
 
 let flatten_table_to_update (tbllist:table list) =
-  List.concat (List.rev_map (fun (t:table) ->
-      (flat_row_list ({stat=t.stat; tblname=t.tblname; objref=""; fldname=""; value=Schema.Value.String "";})) t.rows) tbllist)
+  List.sort compare_by_modified (List.concat (List.rev_map (fun (t:table) ->
+      (flat_row_list ({stat=t.stat; tblname=t.tblname; objref=""; fldname=""; value=Schema.Value.String "";})) t.rows) tbllist))
 
-let make_change_with_db_reply old_token db (update:update) =
+let make_change_with_db_reply db (update:update) =
   match update.fldname with
   | "" -> make_empty_table update.stat update.tblname db
-  | _ -> make_change old_token update.stat update.tblname update.objref update.fldname update.value db
+  | _ -> make_change update.stat update.tblname update.objref update.fldname update.value db
 
 let make_delete_with_db_reply db delete =
   remove_row delete.table delete.key db
 
-let apply_changes (delta:delta) old_token =
+let apply_changes (delta:delta) =
   if (Manifest.generation (Database.manifest !Xapi_slave_db.slave_db)) < delta.fresh_token then
     begin
       let new_db =
         !Xapi_slave_db.slave_db
-        |> Database.set_generation delta.fresh_token
-        |> (fun db -> List.fold_left (make_change_with_db_reply old_token) db (flatten_table_to_update delta.tables))
+        |> (fun db -> List.fold_left (make_change_with_db_reply) db (flatten_table_to_update delta.tables))
         |> (fun db -> List.fold_left (make_delete_with_db_reply) db delta.deletes)
+        |> Database.set_generation delta.fresh_token
       in
       Xapi_slave_db.slave_db := new_db;
     end;
@@ -219,7 +221,7 @@ let send_notification __context token p =
   let reasons = ref [] in
   if p.rowstat.created = p.rowstat.modified then
     reasons := ["add"];
-  if token < p.rowstat.created && p.rowstat.created < p.rowstat.modified then begin
+  if token <= p.rowstat.created && p.rowstat.created < p.rowstat.modified then begin
     (* Created, then modified *)
     reasons := ["add"; "mod";];
   end
@@ -233,12 +235,13 @@ let send_notification __context token p =
               end) !reasons
 
 let handle_notifications __context token =
-  let db = !Xapi_slave_db.slave_db in
-  let deletes = get_deleted token db in
-  let tables = check_for_updates token db in
-
-  List.iter (fun (d:del_tables) -> Db_action_helper.events_notify d.table "del" d.key) deletes;
-  List.iter (send_notification __context token) (info_extract tables)
+  let dels = ref [] in
+  let tables = ref [] in
+  Mutex.execute Xapi_slave_db.slave_db_mutex (fun () ->
+      dels := get_deleted token !Xapi_slave_db.slave_db;
+      tables := check_for_updates token !Xapi_slave_db.slave_db;);
+  List.iter (fun (d:del_tables) -> Db_action_helper.events_notify d.table "del" d.key) !dels;
+  List.iter (send_notification __context token) (info_extract !tables)
 
 let write_db_to_disk =
   if !Xapi_globs.slave_dbs then
@@ -268,8 +271,8 @@ let loop ~__context () =
               delta_of_rpc (Jsonrpc.of_string res)
            )
         ) in
-    Mutex.execute Xapi_slave_db.slave_db_mutex (fun () -> apply_changes changes (Int64.of_string !token_str));
-    Mutex.execute Xapi_slave_db.slave_db_mutex (fun () -> handle_notifications __context (Int64.of_string !token_str));
+    Mutex.execute Xapi_slave_db.slave_db_mutex (fun () -> apply_changes changes);
+    handle_notifications __context (Int64.of_string !token_str);
     if Mtime.Span.to_s now > delay_seconds then write_db_to_disk;
     if changes.last_event_token > (get_gen !Xapi_slave_db.slave_db) then begin
       token_str := Int64.to_string (get_gen !Xapi_slave_db.slave_db);
