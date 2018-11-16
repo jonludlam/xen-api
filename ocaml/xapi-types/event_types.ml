@@ -14,8 +14,7 @@
 
 (** Types used to store events: *****************************************************************)
 type op = API.event_operation
-let rpc_of_op = API.rpc_of_event_operation
-let op_of_rpc = API.event_operation_of_rpc
+let typ_of_op = API.typ_of_event_operation
 
 type event = {
   id: string;
@@ -24,7 +23,7 @@ type event = {
   op: op;
   reference: string;
   snapshot: Rpc.t option;
-} [@@deriving rpc]
+} [@@deriving rpcty]
 
 let ev_struct_remap = [
   "id","id";
@@ -42,20 +41,22 @@ let remap map str =
   | _ -> str
 
 let rpc_of_event ev =
-  remap ev_struct_remap (rpc_of_event ev)
+  remap ev_struct_remap (Rpcmarshal.marshal typ_of_event ev)
 
 let event_of_rpc rpc =
-  event_of_rpc (remap (List.map (fun (k,v) -> (v,k)) ev_struct_remap) rpc)
+  match Rpcmarshal.unmarshal typ_of_event (remap (List.map (fun (k,v) -> (v,k)) ev_struct_remap) rpc) with
+  | Ok e -> e
+  | Error (`Msg m) -> failwith (Printf.sprintf "Failed to unmarshal event: %s" m)
 
-type events = event list [@@deriving rpc]
+type events = event list [@@deriving rpcty]
 
-type token = string [@@deriving rpc]
+type token = string [@@deriving rpcty]
 
 type event_from = {
   events: event list;
   valid_ref_counts: (string * int32) list;
   token: token;
-} [@@deriving rpc]
+} [@@deriving rpcty]
 
 let rec rpc_of_event_from e =
   Rpc.Dict
@@ -68,7 +69,7 @@ let rec rpc_of_event_from e =
                (key, (Rpc.Int32 count)))
             e.valid_ref_counts
         in Rpc.Dict dict));
-      ("token", (rpc_of_token e.token)) ]
+      ("token", (Rpcmarshal.marshal typ_of_token e.token)) ]
 
 (** Return result of an events.from call *)
 
@@ -82,6 +83,11 @@ let op_of_string x = match String.lowercase_ascii x with
 let string_of_event ev = sprintf "%s %s %s %s %s" ev.id ev.ty (string_of_op ev.op) ev.reference
     (if ev.snapshot = None then "(no snapshot)" else "OK")
 
+let event_from_of_rpc rpc =
+  match Rpcmarshal.unmarshal typ_of_event_from rpc with
+  | Ok e -> e
+  | Error (`Msg m) -> failwith (Printf.sprintf "Failed to unmarshal event_from: %s" m)
+  
 let parse_event_from rpc = rpc |> Xmlrpc.to_string |> Xmlrpc.of_string |> event_from_of_rpc
 (** This function should be used, instead of
     {!event_from_of_rpc}, to parse the value returned by {!Xapi_event.from} in

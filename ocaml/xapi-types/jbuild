@@ -9,7 +9,7 @@ let () = Printf.ksprintf Jbuild_plugin.V1.send {|
 (rule
  ((targets (aPI.ml))
   (deps (../idl/ocaml_backend/gen_api_main.exe))
-  (action (run ${<} -filterinternal true -filter closed -mode api -output ${@}))
+  (action (run ${<} -filterinternal false -filter closed -mode api -output ${@}))
  )
 )
 

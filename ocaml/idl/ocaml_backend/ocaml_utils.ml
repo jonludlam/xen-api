@@ -67,13 +67,13 @@ let rec alias_of_ty ?(prefix="") = function
   | Int                           -> "int64"
   | Float                         -> "float"
   | Bool                          -> "bool"
-  | DateTime                      -> "datetime"
-  | Set ty                        -> sprintf "%s_set" (alias_of_ty ty)
+  | DateTime                      -> "string"
+  | Set ty                        -> sprintf "%s list" (alias_of_ty ty)
   | Enum(name, _)                 -> String.uncapitalize_ascii name
-  | Map(k, v)                     -> sprintf "%s_to_%s_map" (alias_of_ty k) (alias_of_ty v)
-  | Ref x                         -> sprintf "ref_%s" x
+  | Map(k, v)                     -> sprintf "(%s * %s) list" (alias_of_ty k) (alias_of_ty v)
+  | Ref x                         -> sprintf "%s_ref" (String.uncapitalize_ascii x)
   | Record x                      -> sprintf "%s_t" (ocaml_of_record_name x)
-  | Option x                      -> sprintf "%s_option" (alias_of_ty x)
+  | Option x                      -> sprintf "%s option" (alias_of_ty x)
 
 (** Convert an IDL type into a string containing OCaml code representing the
     type. *)
@@ -82,15 +82,15 @@ let rec ocaml_of_ty = function
   | Int -> "int64"
   | Float -> "float"
   | Bool -> "bool"
-  | DateTime -> "Date.iso8601"
+  | DateTime -> "string"
   | Set (Record x) -> alias_of_ty (Record x) ^ " list"
   | Set x -> ocaml_of_ty x ^ " list"
   | Enum(name, cs) -> ocaml_of_enum (List.map fst cs)
   | Map(l, r) -> "("^alias_of_ty l^" * "^alias_of_ty r^") list"
   (*  | Ref "session" -> "Uuid.cookie" *)
-  | Ref ty -> "[`"^ty^"] Ref.t"
+  | Ref ty -> (ocaml_of_record_name ty) ^ "_t Rpc.Types.ref"
   | Option x -> ocaml_of_ty x ^ " option"
-  | Record x -> failwith "ocaml_of_ty got a record"
+  | Record x -> (String.uncapitalize_ascii x) ^ "_t"
 
 (** Take an object name and return the corresponding ocaml name *)
 let ocaml_of_obj_name x =
