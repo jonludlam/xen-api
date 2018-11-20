@@ -2425,11 +2425,12 @@ let events_from_xapi () =
                        debug "Received event for some other task";
                    | _ -> warn "Received event for something we didn't register for!"
                  ) from.events;
+               List.iter (fun c -> debug "Classes I care about: %s" c) classes;
                token := from.token;
                Events_from_xapi.broadcast !token;
-             done
+             done;
            );
-       done
+       done;
     )
 
 let success_task queue_name f dbg id =

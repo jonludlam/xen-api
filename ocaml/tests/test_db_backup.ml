@@ -43,9 +43,9 @@ let dump db =
               Printf.printf "  %s: %s\n" fldname (Schema.Value.marshal v)) row) table) (Db_cache_types.Database.tableset db)
 
 let stat_to_string (stat:Db_cache_types.Stat.t) =
-  "{created: " ^ (Int64.to_string stat.created) ^
+  "stat : {created: " ^ (Int64.to_string stat.created) ^
   "; modified: " ^ (Int64.to_string stat.modified) ^
-  "; deleted: " ^ (Int64.to_string stat.deleted) ^ ";}"
+  "; deleted: " ^ (Int64.to_string stat.deleted) ^ ";}; "
 
 
 let tbl_to_string (tbl:Db_cache_types.Table.t) =
@@ -65,6 +65,32 @@ let tbl_eq dba dbb tbl =
     end
   else
     true
+
+let print_field (f:Xapi_database_backup.field) =
+  Printf.printf "\n    Field: %s, {%Li;%Li;%Li}" f.fldname f.stat.created f.stat.modified f.stat.deleted
+
+let print_row (r:Xapi_database_backup.row) =
+  Printf.printf "\nRow: %s, {%Li;%Li;%Li}" r.objref r.stat.created r.stat.modified r.stat.deleted;
+  List.iter print_field r.fields
+
+let t_eq (t1:Xapi_database_backup.table) (t2:Xapi_database_backup.table) =
+  if t1.tblname = t2.tblname && t1.stat = t2.stat && t1.rows = t2.rows then
+    true
+  else
+    begin
+      Printf.printf "%s tables not equal:\n" t1.tblname;
+      Printf.printf "table a: %s\n" (stat_to_string {created=t1.stat.created; modified=t1.stat.modified; deleted=t1.stat.deleted});
+      Printf.printf "table b: %s\n\n" (stat_to_string {created=t2.stat.created; modified=t2.stat.modified; deleted=t2.stat.deleted});
+      List.iter print_row t1.rows;
+      Printf.printf "\n";
+      List.iter print_row t2.rows;
+      Printf.printf "\n";
+      false
+    end
+
+
+let table_list_eq  tl1 tl2 =
+  List.for_all2 t_eq tl1 tl2
 
 let db_to_str db =
   let tbl_list = (get_tables db) in
@@ -90,8 +116,6 @@ let test_db_backup () =
 
   let gen_init = get_gen init_db in
   let gen_changes = get_gen changes_db in
-  Printf.printf "\nGeneration 1: %Li" gen_init;
-  Printf.printf "\nGeneration 2: %Li\n" gen_changes;
 
   Alcotest.(check bool) "Test the equality check" true (dbs_are_equal init_db init_db);
   Alcotest.(check bool) "Database generations are equal" true (gen_init = gen_changes);
@@ -111,7 +135,6 @@ let test_db_with_vm () =
   Xapi_database_backup.apply_changes changes;
   let changes_db = !(Xapi_slave_db.slave_db) in
 
-  Printf.printf "Changes: %s" (Xapi_database_backup.delta_to_string changes);
   Alcotest.(check bool) "VM generation is the same" true (get_gen init_db = get_gen changes_db);
   Alcotest.(check bool) "VM table updates are equal" true (dbs_are_equal init_db changes_db);
 
@@ -166,6 +189,39 @@ let test_db_with_multiple_changes () =
 
   Alcotest.(check bool) "Third vm created - generations equal" true (get_gen init_db = get_gen changes_db);
   Alcotest.(check bool) "Third vm created - tables correct" true (dbs_are_equal init_db changes_db);
+
+  Xapi_slave_db.clear_db ()
+
+let test_db_apply () =
+  Xapi_slave_db.clear_db ();
+
+  let __context = make_test_database () in
+  let vm = make_vm __context () in
+  Db.VM.set_name_description __context vm "NewName1";
+  let init_db = Db_ref.get_database (Context.database_of __context) in
+  let changes = Xapi_database_backup.get_delta __context (-2L) in
+  Xapi_database_backup.apply_changes changes;
+  let changes_db = !(Xapi_slave_db.slave_db) in
+
+  Alcotest.(check bool) "First vm created - generations equal" true (get_gen init_db = get_gen changes_db);
+  Alcotest.(check bool) "First vm created - tables correct" true (dbs_are_equal init_db changes_db);
+
+  (* Construct delta from slave_db *)
+  let local_delta = ref changes in
+  local_delta := {fresh_token= (get_gen changes_db);
+                  last_event_token=(Int64.pred (get_gen changes_db));
+                  tables=(Xapi_database_backup.check_for_updates (-2L) changes_db);
+                  deletes=(Xapi_database_backup.get_deleted (-2L) changes_db);
+                  counts=(Xapi_database_backup.object_count changes_db);
+                 };
+  let _remote_delta_str = (Xapi_database_backup.delta_to_string changes) in
+  let _local_delta_str = (Xapi_database_backup.delta_to_string !local_delta) in
+
+  Alcotest.(check bool) "Fresh_tokens are equal" true (changes.fresh_token=(!local_delta.fresh_token));
+  Alcotest.(check bool) "Last event tokens are equal" true (changes.last_event_token=(!local_delta.last_event_token));
+  Alcotest.(check bool) "Delta tables are equal" true (table_list_eq changes.tables (!local_delta.tables));
+  Alcotest.(check bool) "Delta deletes are equal" true (changes.deletes=(!local_delta.deletes));
+  Alcotest.(check bool) "Deltas are equal" true ((Xapi_database_backup.delta_to_string changes)=(Xapi_database_backup.delta_to_string !local_delta));
 
   Xapi_slave_db.clear_db ()
 
@@ -306,8 +362,6 @@ let test_db_counts () =
   let _init_db = Db_ref.get_database (Context.database_of __context) in
   let changes = Xapi_database_backup.get_delta __context (-2L) in
 
-  Printf.printf "Changes: %s\n\n" (Xapi_database_backup.delta_to_string changes);
-
   Xapi_database_backup.apply_changes changes;
   let _changes_db = !(Xapi_slave_db.slave_db) in
   let token = changes.last_event_token in
@@ -383,6 +437,7 @@ let test =
     "test_db_with_vm", `Quick, test_db_with_vm;
     "test_db_with_name_change", `Quick,  test_db_with_name_change;
     "test_db_with_multiple_changes", `Quick,  test_db_with_multiple_changes;
+    "test_db_apply", `Quick, test_db_apply;
     "test_db_events", `Quick, test_db_events;
     "test_db_events_through_slave_db", `Quick, test_db_events_through_slave_db;
     "test_db_events_without_session", `Quick, test_db_events_without_session;
