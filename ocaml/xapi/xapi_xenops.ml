@@ -87,9 +87,10 @@ let task_delta_event_received = Condition.create ()
 let wait_for_task queue_name dbg id =
   let is_finished () =
     let tasks = (fst !local_db).task in
-    match (Refmap.find dbg tasks).state with
+    try match (Refmap.find id tasks).state with
     | Task.Completed _ | Task.Failed _ -> true
     | Task.Pending _ -> false
+    with Not_found -> false (* Task not in database yet, we have to wait for it to appear *)
   in
   Mutex.execute task_delta_event_mutex (fun () ->
       while not @@ is_finished () do
@@ -2127,7 +2128,7 @@ let rec events_watch ~__context cancel queue_name from =
       match marshalled_update with
       | Rpc.Dict classes when List.mem_assoc "task" classes ->
         Condition.broadcast task_delta_event_received
-      | _ -> assert false)
+      | _ -> ())
   | Result.Error (`Msg m) ->
     failwith (Printf.sprintf "DB update delta failed: %s. Delta: %s" m (Rpc.to_string marshalled_update))
   in
