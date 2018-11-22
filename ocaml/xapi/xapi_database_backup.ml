@@ -189,6 +189,19 @@ let flatten_one_table (t:table) =
 let flatten tl =
   List.sort compare_by_modified (List.concat (List.map flatten_one_table tl))
 
+let row_to_notification (u:update) (r:row) =
+  {u with objref=r.objref; stat = r.stat;}
+
+let extract (t:table) =
+  let u = {tblname=t.tblname; stat=t.stat; objref = ""; fldname = ""; value = (Schema.Value.String "")} in
+  match t.rows with
+    [] -> [u]
+  | _ -> List.map (row_to_notification u) t.rows
+
+let table_list_to_notifications tl =
+  List.sort compare_by_modified (List.concat (List.map extract tl))
+
+
 let make_change_with_db_reply db (update:update) =
   match update.fldname with
   | "" -> make_empty_table update.stat update.tblname db
@@ -261,12 +274,13 @@ let send_notification __context token (u:update) =
   end
   else
     reasons := ["mod"];
+  if u.stat.modified = u.stat.deleted then
+    reasons := [];
   if u.fldname = "" then () else
-    List.iter (fun r -> let record = (Eventgen.find_get_record u.tblname ~__context ~self:u.objref) () in
-                begin match record with
-                  | None -> debug "Could not send %s event for %s in %s table" r u.objref u.tblname;
-                  | Some record -> Db_action_helper.events_notify ~snapshot:record u.tblname r u.objref;
-                end) !reasons
+    List.iter (fun r ->
+                  debug "RWD: sendning %s notification for %s/%s" r u.tblname u.objref;
+                    Db_action_helper.events_notify u.tblname r u.objref;
+                ) !reasons
 
 let handle_notifications __context token (master_delta:delta) =
   let dels = ref [] in
@@ -274,7 +288,7 @@ let handle_notifications __context token (master_delta:delta) =
       dels := get_deleted token !Xapi_slave_db.slave_db;
     );
   List.iter (fun (d:del_tables) -> Db_action_helper.events_notify d.table "del" d.key) !dels;
-  List.iter (send_notification __context token) (flatten master_delta.tables)
+  List.iter (send_notification __context token) (table_list_to_notifications master_delta.tables)
 
 let write_db_to_disk =
   if !Xapi_globs.slave_dbs then

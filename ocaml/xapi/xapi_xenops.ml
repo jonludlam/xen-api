@@ -2427,6 +2427,7 @@ let events_from_xapi () =
                  ) from.events;
                List.iter (fun c -> debug "Classes I care about: %s" c) classes;
                token := from.token;
+               debug "RWD TOEKN: %s" !token;
                Events_from_xapi.broadcast !token;
              done;
            );
