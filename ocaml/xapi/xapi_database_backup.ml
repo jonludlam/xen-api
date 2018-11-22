@@ -189,18 +189,12 @@ let flatten_one_table (t:table) =
 let flatten tl =
   List.sort compare_by_modified (List.concat (List.map flatten_one_table tl))
 
-let row_to_notification (u:update) (r:row) =
-  {u with objref=r.objref; stat = r.stat;}
-
 let extract (t:table) =
-  let u = {tblname=t.tblname; stat=t.stat; objref = ""; fldname = ""; value = (Schema.Value.String "")} in
-  match t.rows with
-    [] -> [u]
-  | _ -> List.map (row_to_notification u) t.rows
+  List.rev_map (fun (r:row) ->
+      {tblname=t.tblname; objref=r.objref; stat=r.stat; fldname = ""; value = (Schema.Value.String "");}) t.rows
 
 let table_list_to_notifications tl =
-  List.sort compare_by_modified (List.concat (List.map extract tl))
-
+  List.sort compare_by_modified (List.concat (List.rev_map extract tl))
 
 let make_change_with_db_reply db (update:update) =
   match update.fldname with
@@ -276,7 +270,7 @@ let send_notification __context token (u:update) =
     reasons := ["mod"];
   if u.stat.modified = u.stat.deleted then
     reasons := [];
-  if u.fldname = "" then () else
+  if u.objref = "" then () else
     List.iter (fun r ->
                   debug "RWD: sendning %s notification for %s/%s" r u.tblname u.objref;
                     Db_action_helper.events_notify u.tblname r u.objref;
