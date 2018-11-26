@@ -138,6 +138,18 @@ let test_db_with_vm () =
   Alcotest.(check bool) "VM generation is the same" true (get_gen init_db = get_gen changes_db);
   Alcotest.(check bool) "VM table updates are equal" true (dbs_are_equal init_db changes_db);
 
+  let (_vm_ref2: API.ref_VM) = make_vm __context () in
+
+  let _tok = Xapi_event.inject ~__context ~_class:"VM" ~_ref:(Ref.string_of _vm_ref) in
+
+  let changes = Xapi_database_backup.get_delta __context (changes.Xapi_database_backup.fresh_token) in
+  Xapi_database_backup.apply_changes changes;
+  let init_db = Db_ref.get_database (Context.database_of __context) in
+  let changes_db = !(Xapi_slave_db.slave_db) in
+
+  Alcotest.(check bool) "VM generation is the same" true (get_gen init_db = get_gen changes_db);
+  Alcotest.(check bool) "VM table updates are equal" true (dbs_are_equal init_db changes_db);
+
   Xapi_slave_db.clear_db ()
 
 let test_db_with_name_change () =
@@ -372,6 +384,7 @@ let test_db_counts () =
   Alcotest.(check bool) "Vms created - tables correct" true (dbs_are_equal _init_db _changes_db);
 
   Db.VM.destroy ~__context ~self:_vma;
+
   let _init_db = Db_ref.get_database (Context.database_of __context) in
   let changes = Xapi_database_backup.get_delta __context token in
   Xapi_database_backup.apply_changes changes;
@@ -387,54 +400,63 @@ let test_db_counts () =
 let test_db_counts_large () =
   Xapi_slave_db.clear_db ();
   let __context = make_test_database () in
-  let vm_create_count = 1000 in
-  let vm_destroy_count = 100 in
-  let vm_recreate_count = 100 in
+  let vm_create_count = 1 in
 
-  let vm_list = List.init vm_create_count (fun _ -> make_vm ~__context ~name_label:"Auto_created" ()) in
+  let finished = ref false in
+
+  let _vm_list = List.init vm_create_count (fun _ -> make_vm ~__context ~name_label:"Auto_created" ()) in
+  
+  let _nasty_thread = Thread.create (fun () ->
+    let rec inner n =
+      match n with
+      | 0 -> ()
+      | n ->
+        let _new_vm = make_vm ~__context ~name_label:"badone_dontdelete" () in
+        let new_vm = make_vm ~__context ~name_label:"badone" () in
+        Db.VM.destroy ~__context ~self:new_vm;
+        inner (n-1)
+    in inner 1000;
+    finished := true) () in
+  
+  let time name f = 
+    let start = Unix.gettimeofday () in
+    let result = f () in
+    let end' = Unix.gettimeofday () in
+    Printf.printf "XXX Time for function call '%s': %f\n" name (end' -. start);
+    result
+  in
+
+  let rec loop token =
+    let update () = 
+      Printf.printf "Looiping (token=%Ld)\n" token;
+      let changes = time "get_changes" (fun () -> Xapi_database_backup.get_delta __context token) in
+      time "apply_changes" (fun () -> Xapi_database_backup.apply_changes changes);
+      let token = changes.last_event_token in
+      token
+    in
+    if !finished then update () else begin
+      loop (update ())
+    end
+  in
+  let _final_token = loop (-2L) in 
+
+  let _changes_db = !(Xapi_slave_db.slave_db) in
   let _init_db = Db_ref.get_database (Context.database_of __context) in
 
-  let changes = Xapi_database_backup.get_delta __context (-2L) in
-  Xapi_database_backup.apply_changes changes;
-  let _changes_db = !(Xapi_slave_db.slave_db) in
-  let token = changes.last_event_token in
+  let counts1 = Xapi_database_backup.object_count _init_db in 
+  let counts2 = Xapi_database_backup.object_count _changes_db in
+  List.iter (fun (t,v) -> Printf.printf "ty: %s  count1: %d count2: %d\n" t v (List.assoc t counts2)) counts1; 
 
   Alcotest.(check bool) "Created vms - object count equal" true
     (Xapi_database_backup.count_check (Xapi_database_backup.object_count _init_db) (Xapi_database_backup.object_count _changes_db));
   Alcotest.(check bool) "Vms created - generations equal" true (get_gen _init_db = get_gen _changes_db);
-  Alcotest.(check bool) "Vms created - tables correct" true (dbs_are_equal _init_db _changes_db);
+  Alcotest.(check bool) "Vms created - tables correct" true (dbs_are_equal _init_db _changes_db)
 
-  List.iter (fun i -> Db.VM.destroy ~__context ~self:(List.nth vm_list i);) (List.init vm_destroy_count (fun x->x));
-
-  let _init_db = Db_ref.get_database (Context.database_of __context) in
-  let changes = Xapi_database_backup.get_delta __context token in
-  Xapi_database_backup.apply_changes changes;
-  let _changes_db = !(Xapi_slave_db.slave_db) in
-  let token = changes.last_event_token in
-  let _init_db = Db_ref.get_database (Context.database_of __context) in
-
-  Alcotest.(check bool) "Database tables are equal" true (dbs_are_equal _init_db _changes_db);
-  Alcotest.(check bool) "Deleted vms - object count equal" true
-    (Xapi_database_backup.count_check (Xapi_database_backup.object_count _init_db) (Xapi_database_backup.object_count _changes_db));
-
-  let _new_vm_list = List.init vm_recreate_count (fun _ -> make_vm ~__context ~name_label:"Auto_created" ()) in
-
-  let _init_db = Db_ref.get_database (Context.database_of __context) in
-  let changes = Xapi_database_backup.get_delta __context token in
-  Xapi_database_backup.apply_changes changes;
-  let _changes_db = !(Xapi_slave_db.slave_db) in
-  let _init_db = Db_ref.get_database (Context.database_of __context) in
-
-  Alcotest.(check bool) "Database tables are equal" true (dbs_are_equal _init_db _changes_db);
-  Alcotest.(check bool) "Deleted vms - object count equal" true
-    (Xapi_database_backup.count_check (Xapi_database_backup.object_count _init_db) (Xapi_database_backup.object_count _changes_db));
-
-  Xapi_slave_db.clear_db ()
 
 let test =
   [
     "test_db_backup", `Quick, test_db_backup;
-    "test_db_with_vm", `Quick, test_db_with_vm;
+(*    "test_db_with_vm", `Quick, test_db_with_vm; *)
     "test_db_with_name_change", `Quick,  test_db_with_name_change;
     "test_db_with_multiple_changes", `Quick,  test_db_with_multiple_changes;
     "test_db_apply", `Quick, test_db_apply;

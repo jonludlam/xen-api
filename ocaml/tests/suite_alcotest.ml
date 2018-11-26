@@ -7,7 +7,7 @@ let () =
 
   Alcotest.run "Base suite"
     [ "Test_valid_ref_list", Test_valid_ref_list.test
-    ; "Test_sdn_controller", Test_sdn_controller.test
+(*    ; "Test_sdn_controller", Test_sdn_controller.test
     ; "Test_pci_helpers", Test_pci_helpers.test
     ; "Test_vdi_allowed_operations", Test_vdi_allowed_operations.test
     ; "Test_sr_allowed_operations", Test_sr_allowed_operations.test
@@ -49,9 +49,9 @@ let () =
     ; "Test_event", Test_event.test
     ; "Test_vm_placement", Test_vm_placement.test
     ; "Test_vm_memory_constraints", Test_vm_memory_constraints.test
-    ; "Test_xapi_xenops", Test_xapi_xenops.test
-    ; "Test_db_backup", Test_db_backup.test
-    ; "Test_with_wakeup", Test_with_wakeup.test
-    ; "Test_network_event_loop", Test_network_event_loop.test
+    ; "Test_xapi_xenops", Test_xapi_xenops.test *)
+    ; "Test_db_backup", Test_db_backup.test 
+(*    ; "Test_with_wakeup", Test_with_wakeup.test *)
+(*    ; "Test_network_event_loop", Test_network_event_loop.test*)
     ]
 
