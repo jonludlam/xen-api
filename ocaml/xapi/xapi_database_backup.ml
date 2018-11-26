@@ -121,6 +121,16 @@ let apply time tblname objref fldname newval =
   |> TableSet.update time tblname Table.empty
   |> Database.update
 
+let make_from_barrier stat tblname objref db =
+  debug "Making change from barrier - %s/%s {%Li; %Li; %Li; }" tblname objref stat.created stat.modified stat.deleted;
+  db
+  |> (
+    Table.touch stat.modified objref Row.empty
+    |> TableSet.update stat.modified tblname Table.empty
+    |> Database.update
+  )
+  |> Database.increment
+
 let make_empty_table stat tblname =
   (fun t -> t)
   |> TableSet.update stat.created tblname Table.empty
@@ -128,39 +138,50 @@ let make_empty_table stat tblname =
 
 let make_change stat tblname objref fldname newval db =
   if TableSet.mem tblname (Database.tableset db) then begin
-    if (Table.mem objref (TableSet.find tblname (Database.tableset db))) then
-      begin
-        if (Row.mem fldname (Table.find objref (TableSet.find tblname (Database.tableset db)))) then
+    if (Table.mem objref (TableSet.find tblname (Database.tableset db))) then begin
+      if (Row.mem fldname (Table.find objref (TableSet.find tblname (Database.tableset db)))) then
+        begin
+          debug "Case 1: everything exists, modifying - %s/%s/%s at {%Li; %Li; %Li;}" tblname objref fldname stat.created stat.modified stat.deleted;
           apply stat.modified tblname objref fldname newval db
-        else
-          begin
-            if stat.created = stat.modified then
-              apply stat.created tblname objref fldname newval db
-            else begin
-              apply stat.created tblname objref fldname (Schema.Value.String "XXX") db
-              |> apply stat.modified tblname objref fldname newval
-
-            end
+        end
+      else
+        begin
+          if stat.created = stat.modified then begin
+            debug "Case 2: Field doesn't exist, creating - %s/%s/%s at {%Li; %Li; %Li;}" tblname objref fldname stat.created stat.modified stat.deleted;
+            apply stat.created tblname objref fldname newval db
           end
-      end
+          else
+            begin
+              debug "Case 3: Field doesn't exist but we have two stats, creating and modifying - %s/%s/%s at {%Li; %Li; %Li;}" tblname objref fldname stat.created stat.modified stat.deleted;
+              apply stat.modified tblname objref fldname newval (apply stat.created tblname objref fldname (Schema.Value.String "XXX") db)
+            end
+        end
+    end
     else
       begin
-        if stat.created = stat.modified then
+        if stat.created = stat.modified then begin
+          debug "Case 4: Row doesn't exist - creating - %s/%s/%s at {%Li; %Li; %Li;}" tblname objref fldname stat.created stat.modified stat.deleted;
           apply stat.created tblname objref fldname newval db
-        else
-          begin
-            apply stat.created tblname objref fldname (Schema.Value.String (tblname^objref)) db
-            |> apply stat.modified tblname objref fldname newval
-          end
+        end
+        else begin
+          debug "Case 5: Row doesn't exist but we have two stats, creating and modifying - %s/%s/%s at {%Li; %Li; %Li;}" tblname objref fldname stat.created stat.modified stat.deleted;
+          apply stat.modified tblname objref fldname newval (apply stat.created tblname objref fldname (Schema.Value.String (tblname^objref)) db)
+        end
       end
   end
-  else
-    begin
-      make_empty_table {stat with created=(-1L);} tblname db
-      |> apply stat.modified tblname objref fldname newval
-    end
+  else begin
+    debug "Case 6: Table doesn't exist creating and modifying - %s/%s/%s at {%Li; %Li; %Li;}" tblname objref fldname stat.created stat.modified stat.deleted;
+    apply stat.modified tblname objref fldname newval (make_empty_table {stat with created=(-1L);} tblname db)
+  end
+
+
+
+let compare_by_tblname (c1: (string * int)) (c2: (string * int)) =
+  String.compare (fst c1) (fst c2)
 
 let count_check (c1_list: (string * int) list) (c2_list: (string * int) list) =
+  let c1_list = List.sort compare_by_tblname c1_list in
+  let c2_list = List.sort compare_by_tblname c2_list in
   try
     List.for_all2 (fun (a,b) (c,d) -> a=c && b=d) c1_list c2_list
   with invalid_arg -> false
@@ -171,35 +192,43 @@ let compare_by_modified u1 u2 =
   else
     Int64.compare u1.stat.modified u2.stat.modified
 
-let flatten_one_field u (f:field) =
-  {u with
-   stat = f.stat;
-   fldname = f.fldname;
-   value = f.value;}
+let f_field u (field:field) =
+    {u with
+     stat = field.stat;
+     fldname = field.fldname;
+     value = field.value;}
 
-let flatten_one_row u (r:row) =
-  List.map (flatten_one_field {u with objref=r.objref; stat = r.stat;}) r.fields
+let f_row u (row:row) =
+  let u = {u with
+           stat = row.stat;
+           objref = row.objref;} in
+  [u] @ List.rev_map (f_field u) row.fields
 
-let flatten_one_table (t:table) =
-  let u = {tblname=t.tblname; stat=t.stat; objref = ""; fldname = ""; value = (Schema.Value.String "")} in
-  match t.rows with
-    [] -> [u]
-  | _ -> List.concat (List.map (flatten_one_row u) t.rows)
+let f_table (table:table) =
+  let u = {stat = table.stat;
+           tblname = table.tblname;
+           objref = "";
+           fldname = "";
+           value = (Schema.Value.String "");
+          } in
+  match table.rows with
+  | [] -> [u]
+  | _ -> List.concat (List.rev_map (f_row u) table.rows)
 
-let flatten tl =
-  List.sort compare_by_modified (List.concat (List.map flatten_one_table tl))
+let f_all table_list =
+  let l = List.sort compare_by_modified (List.concat (List.rev_map f_table table_list)) in
+  List.iter (fun (u:update) ->
+      debug "RWD UPDATE {%s/%s/%s/v - {%Li; %Li; %Li} }" u.tblname u.objref u.fldname u.stat.created u.stat.modified u.stat.deleted) l;
+  l
 
-let extract (t:table) =
-  List.rev_map (fun (r:row) ->
-      {tblname=t.tblname; objref=r.objref; stat=r.stat; fldname = ""; value = (Schema.Value.String "");}) t.rows
-
-let table_list_to_notifications tl =
-  List.sort compare_by_modified (List.concat (List.rev_map extract tl))
 
 let make_change_with_db_reply db (update:update) =
-  match update.fldname with
+  debug "Deciding path: %s %s %s - {%Li; %Li; %Li}" update.tblname update.objref update.fldname update.stat.created update.stat.modified update.stat.deleted;
+  match update.objref with
   | "" -> make_empty_table update.stat update.tblname db
-  | _ -> make_change update.stat update.tblname update.objref update.fldname update.value db
+  | _ -> (match update.fldname with
+      | "" -> make_from_barrier update.stat update.tblname update.objref db
+      | _ -> make_change update.stat update.tblname update.objref update.fldname update.value db)
 
 let make_delete_with_db_reply db delete =
   remove_row delete.table delete.key db
@@ -235,12 +264,13 @@ let created_time_stamp_sanity db =
   List.for_all (created_check db) (get_table_list db)
 
 let apply_changes (delta:delta) =
+  debug "Delta changes: %s" (delta_to_string delta);
   if (Manifest.generation (Database.manifest !Xapi_slave_db.slave_db)) < delta.fresh_token then
     begin
       let new_db =
         !Xapi_slave_db.slave_db
         |> Database.set_generation delta.fresh_token
-        |> (fun db -> List.fold_left (make_change_with_db_reply) db (flatten delta.tables))
+        |> (fun db -> List.fold_left (make_change_with_db_reply) db (f_all delta.tables))
         |> (fun db -> List.fold_left (make_delete_with_db_reply) db delta.deletes)
       in
       Xapi_slave_db.slave_db := new_db;
@@ -260,21 +290,19 @@ let apply_changes (delta:delta) =
 let send_notification __context token (u:update) =
   let __context = Xapi_slave_db.update_context_db __context in
   let reasons = ref [] in
-  if u.stat.created = u.stat.modified then
+  if token < u.stat.created && u.stat.created < u.stat.modified then
+    reasons := ["add"; "mod"];
+  if token < u.stat.created && u.stat.created = u.stat.modified then
     reasons := ["add"];
-  if token <= u.stat.created && u.stat.created < u.stat.modified then begin
-    (* Created, then modified *)
-    reasons := ["add"; "mod";];
-  end
-  else
+  if u.stat.created < token && token < u.stat.modified then
     reasons := ["mod"];
   if u.stat.modified = u.stat.deleted then
     reasons := [];
-  if u.objref = "" then () else
-    List.iter (fun r ->
-                  debug "RWD: sendning %s notification for %s/%s" r u.tblname u.objref;
-                    Db_action_helper.events_notify u.tblname r u.objref;
-                ) !reasons
+
+  List.iter (fun r ->
+      debug "RWD: sendning %s notification for %s/%s" r u.tblname u.objref;
+      Db_action_helper.events_notify u.tblname r u.objref;
+    ) !reasons
 
 let handle_notifications __context token (master_delta:delta) =
   let dels = ref [] in
@@ -282,7 +310,7 @@ let handle_notifications __context token (master_delta:delta) =
       dels := get_deleted token !Xapi_slave_db.slave_db;
     );
   List.iter (fun (d:del_tables) -> Db_action_helper.events_notify d.table "del" d.key) !dels;
-  List.iter (send_notification __context token) (table_list_to_notifications master_delta.tables)
+  List.iter (send_notification __context token) (f_all master_delta.tables)
 
 let write_db_to_disk =
   if !Xapi_globs.slave_dbs then
