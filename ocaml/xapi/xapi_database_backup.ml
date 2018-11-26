@@ -175,7 +175,6 @@ let make_change stat tblname objref fldname newval db =
   end
 
 
-
 let compare_by_tblname (c1: (string * int)) (c2: (string * int)) =
   String.compare (fst c1) (fst c2)
 
@@ -200,9 +199,11 @@ let f_field u (field:field) =
 
 let f_row u (row:row) =
   let u = {u with
-           stat = row.stat;
+           stat = {row.stat with modified = (max row.stat.modified u.stat.modified)};
            objref = row.objref;} in
-  [u] @ List.rev_map (f_field u) row.fields
+  match row.fields with
+  | [] -> [u]
+  | _ -> List.rev_map (f_field u) row.fields
 
 let f_table (table:table) =
   let u = {stat = table.stat;
@@ -223,7 +224,7 @@ let f_all table_list =
 
 
 let make_change_with_db_reply db (update:update) =
-  debug "Deciding path: %s %s %s - {%Li; %Li; %Li}" update.tblname update.objref update.fldname update.stat.created update.stat.modified update.stat.deleted;
+  debug "Deciding path: [%s fld:%s] %s - {%Li; %Li; %Li}" update.tblname update.fldname update.objref update.stat.created update.stat.modified update.stat.deleted;
   match update.objref with
   | "" -> make_empty_table update.stat update.tblname db
   | _ -> (match update.fldname with
@@ -280,6 +281,7 @@ let apply_changes (delta:delta) =
   if not (count_check slave_counts delta.counts) then
     begin
       debug "The local database and the master database do not appear to be the same size - clearing slave db";
+      List.iter2 (fun (s,i) (s2, i2) -> if s = s2 && i <>i2 then debug "mismatch: %s %i %i" s i i2) delta.counts slave_counts;
       Xapi_slave_db.clear_db ()
     end;
   if not (created_time_stamp_sanity !Xapi_slave_db.slave_db && modified_time_stamp_sanity !Xapi_slave_db.slave_db) then begin
