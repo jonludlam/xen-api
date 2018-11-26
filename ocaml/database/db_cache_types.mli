@@ -33,6 +33,8 @@ module type MAP = sig
   type value
   (** The type of the values in the map *)
 
+  val typ_of : t Rpc.Types.typ
+
   val empty : t
   (** The empty map *)
 
@@ -75,6 +77,10 @@ module type MAP = sig
       if there is a value associated with [t] then its modification time is set to [now];
       if there is no value associated with [t] then one is created with value [default].
       On exit there will be a binding of [key] whose modification time is [now] *)
+
+  val slice_recent : Time.t -> t -> t
+
+  val apply_recent : t -> deltas:t -> t
 end
 
 module Row : sig

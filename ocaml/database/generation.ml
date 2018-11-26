@@ -16,7 +16,7 @@
 module D = Debug.Make(struct let name = "sql" end)
 open D
 
-type t = int64
+type t = int64 [@@deriving rpcty]
 
 let of_string str : t = Int64.of_string str
 let to_string g = Int64.to_string g

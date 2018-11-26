@@ -15,7 +15,7 @@
 open Db_exn
 
 module Time = struct
-  type t = Generation.t
+  type t = Generation.t [@@deriving rpcty]
 end
 
 module Stat = struct
@@ -23,7 +23,7 @@ module Stat = struct
     created: Time.t;
     modified: Time.t;
     deleted: Time.t;
-  }
+  } [@@deriving rpcty]
   let make x = { created = x; modified = x; deleted = 0L }
 end
 
@@ -41,11 +41,21 @@ end
 
 module type VAL = sig
   type t
+  val typ_of : t Rpc.Types.typ
+  val slice_recent : Time.t -> t -> t
+  val apply_recent : t -> deltas:t -> t
+end
+
+module Value = struct
+  include Schema.Value
+  let slice_recent : Time.t -> t -> t = fun _ x -> x
+  let apply_recent : t -> deltas:t -> t = fun t ~deltas -> deltas
 end
 
 module type MAP = sig
   type t
   type value
+  val typ_of : t Rpc.Types.typ
   val empty : t
   val add: Time.t -> string -> value -> t -> t
   val remove : Time.t -> string -> t -> t
@@ -56,6 +66,8 @@ module type MAP = sig
   val iter : (string -> value -> unit) -> t -> unit
   val update : int64 -> string -> value -> (value -> value) -> t -> t
   val touch : int64 -> string -> value -> t -> t
+  val slice_recent : Time.t -> t -> t
+  val apply_recent : t -> deltas:t -> t
 end
 
 (** A specialised StringMap whose range type is V.t, and which keeps a record of when records are created/updated *)
@@ -63,8 +75,18 @@ module Make = functor(V: VAL) -> struct
   type x = {
     stat: Stat.t;
     v : V.t
-  }
+  } [@@deriving rpcty]
   type map_t = x StringMap.t
+  let typ_of_map_t : map_t Rpc.Types.typ = Rpc.Types.(Abstract {
+    aname="DatabaseMap";
+    rpc_of = (fun x -> StringMap.fold (fun key v acc -> (key, Rpcmarshal.marshal typ_of_x v)::acc) x [] |> fun x -> Rpc.Dict x);
+    of_rpc = (fun rpc ->
+      let open Rresult.R in
+      match rpc with
+      | Dict kvs -> List.fold_left (fun acc (k,v) -> acc >>= fun acc' -> Rpcmarshal.unmarshal typ_of_x v >>= fun v' -> Ok (StringMap.add k v' acc')) (Ok StringMap.empty) kvs
+      | _ -> Error (`Msg (Printf.sprintf "Failed to unwrap RPC in Db_cache_types: found: %s" (Jsonrpc.to_string rpc))));
+    test_data = [StringMap.empty];
+    })
   let empty = StringMap.empty
   let fold f = StringMap.fold (fun key x -> f key x.stat x.v)
   let add generation key v =
@@ -90,12 +112,17 @@ module Make = functor(V: VAL) -> struct
     else
       updatefn ()
   let fold_over_recent since f t initial = StringMap.fold (fun x y z -> if y.stat.Stat.modified > since then f x y.stat y.v z else z) t initial
+  let slice_recent since t = StringMap.fold (fun key v acc -> if v.stat.Stat.modified > since then StringMap.add key {v with v=V.slice_recent since v.v} acc else acc) t StringMap.empty
+  let apply_recent t ~deltas =
+    StringMap.fold (fun k v row ->
+      if mem k row then StringMap.update k v (fun x -> {v with v=V.apply_recent x.v v.v}) row else StringMap.add k v row) t deltas 
 end
 
 module Row = struct
-  include Make(Schema.Value)
+  include Make(Value)
 
   type t=map_t
+  let typ_of=typ_of_map_t
   type value = Schema.Value.t
   let find key t =
     try find key t
@@ -114,8 +141,12 @@ module Table = struct
 
   type t = { rows : StringRowMap.map_t;
              deleted_len : int;
-             deleted : (Time.t * Time.t * string) list }
+             deleted : (Time.t * Time.t * string) list } [@@deriving rpcty]
   type value = Row.t
+
+  let upper_length_deleted_queue = 512
+  let lower_length_deleted_queue = 256
+
   let get_deleted_len t = t.deleted_len
   let get_deleted t = t.deleted
   let add g key value t = {t with rows=StringRowMap.add g key value t.rows}
@@ -125,8 +156,6 @@ module Table = struct
   let mem key t = StringRowMap.mem key t.rows
   let iter f t = StringRowMap.iter f t.rows
   let remove g key t =
-    let upper_length_deleted_queue = 512 in
-    let lower_length_deleted_queue = 256 in
     let created = (StringMap.find key t.rows).StringRowMap.stat.Stat.created in
     let new_element = (created,g,key) in
     let new_len,new_deleted =
@@ -140,6 +169,10 @@ module Table = struct
   let touch g key default t = {t with rows = StringRowMap.touch g key default t.rows }
   let update g key default f t = {t with rows = StringRowMap.update g key default f t.rows}
   let fold_over_recent since f t acc = StringRowMap.fold_over_recent since f t.rows acc
+  let slice_recent since t =
+    let deleted = List.filter (fun (created, deleted, r) -> (deleted > since && created <= since)) t.deleted in
+    {rows = StringRowMap.slice_recent since t.rows;
+    deleted; deleted_len = List.length deleted}
 
   let fold_over_deleted since f t acc =
     let rec loop xs acc = match xs with
@@ -153,12 +186,23 @@ module Table = struct
       | [] ->
         acc in
     loop t.deleted acc
+  let apply_recent t ~deltas =
+    let deleted_len_uncapped = t.deleted_len + deltas.deleted_len in
+    let deleted_len, deleted =
+      if deleted_len_uncapped < upper_length_deleted_queue
+      then deleted_len_uncapped, deltas.deleted @ t.deleted
+      else lower_length_deleted_queue, (Xapi_stdext_std.Listext.List.take lower_length_deleted_queue (deltas.deleted @ t.deleted))
+    in 
+    {rows = StringRowMap.apply_recent t.rows ~deltas:deltas.rows;
+     deleted; deleted_len }
+
 end
 
 module TableSet = struct
   include Make(Table)
 
   type t=map_t
+  let typ_of=typ_of_map_t
   type value = Table.t
   let find key t =
     try find key t
