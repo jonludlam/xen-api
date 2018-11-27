@@ -119,7 +119,7 @@ let apply time tblname objref fldname newval =
   |> Database.update
 
 let make_from_barrier stat tblname objref db =
-  debug "Making change from barrier - %s/%s {%Li; %Li; %Li; }" tblname objref stat.created stat.modified stat.deleted;
+  (*debug "Making change from barrier - %s/%s {%Li; %Li; %Li; }" tblname objref stat.created stat.modified stat.deleted;*)
   db
   |> (
     Table.touch stat.modified objref Row.empty
@@ -273,7 +273,7 @@ module MySet = Set.Make(String)
 let apply_changes (delta:delta) =
   debug "Delta changes";
   let f_alled = time "compute_f_all" (fun () -> f_all delta.tables) in
-  if (Manifest.generation (Database.manifest !Xapi_slave_db.slave_db)) < delta.fresh_token then
+  if (Manifest.generation (Database.manifest !Xapi_slave_db.slave_db)) <= delta.fresh_token then
     begin
       let new_db =
         !Xapi_slave_db.slave_db

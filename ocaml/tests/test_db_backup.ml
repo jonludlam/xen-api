@@ -415,7 +415,7 @@ let test_db_counts_large () =
         let new_vm = make_vm ~__context ~name_label:"badone" () in
         Db.VM.destroy ~__context ~self:new_vm;
         inner (n-1)
-    in inner 1000;
+    in inner 10000;
     finished := true) () in
   
   let time name f = 
