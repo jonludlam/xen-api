@@ -271,18 +271,27 @@ let time name f =
 module MySet = Set.Make(String)
 
 let apply_changes (delta:delta) =
-  debug "Delta changes";
+  (*debug "Delta changes %s" (delta_to_string delta);*)
   let f_alled = time "compute_f_all" (fun () -> f_all delta.tables) in
-  if (Manifest.generation (Database.manifest !Xapi_slave_db.slave_db)) <= delta.fresh_token then
+  if Random.int 1 = 0 then begin
+    let delay = (Random.float 0.1) in
+    debug "Delaying by: %f" delay;
+    Thread.delay delay;
+  end;
+  if (Manifest.generation (Database.manifest !Xapi_slave_db.slave_db)) < delta.fresh_token then
     begin
       let new_db =
         !Xapi_slave_db.slave_db
-        |> Database.set_generation delta.fresh_token
         |> (fun db -> List.fold_left (make_change_with_db_reply) db f_alled)
         |> (fun db -> List.fold_left (make_delete_with_db_reply) db delta.deletes)
+        |> Database.set_generation delta.fresh_token
       in
       Xapi_slave_db.slave_db := new_db;
-    end;
+    end;(*
+  else begin
+    if (Manifest.generation (Database.manifest !Xapi_slave_db.slave_db)) = delta.fresh_token then
+      debug "EQUAL TOKEN: %s" (delta_to_string delta);
+  end;*)
   (* Need to check that we haven't missed anything *)
   let slave_counts = object_count !Xapi_slave_db.slave_db in
   if not (count_check slave_counts delta.counts) then

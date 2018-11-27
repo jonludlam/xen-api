@@ -452,7 +452,6 @@ let test_db_counts_large () =
   Alcotest.(check bool) "Vms created - generations equal" true (get_gen _init_db = get_gen _changes_db);
   Alcotest.(check bool) "Vms created - tables correct" true (dbs_are_equal _init_db _changes_db)
 
-
 let test =
   [
     "test_db_backup", `Quick, test_db_backup;
