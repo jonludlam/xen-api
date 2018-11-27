@@ -88,7 +88,7 @@ let object_count db =
 
 let get_delta __context token =
   Mutex.execute Db_lock.dbcache_mutex (fun () ->
-    let db = Db_ref.get_database (Context.database_of __context) in
+      let db = Db_ref.get_database (Context.database_of __context) in
       let t = Manifest.generation (Database.manifest db) in
       {fresh_token=t;
        last_event_token=Int64.pred t;
@@ -119,7 +119,6 @@ let apply time tblname objref fldname newval =
   |> Database.update
 
 let make_from_barrier stat tblname objref db =
-  (*debug "Making change from barrier - %s/%s {%Li; %Li; %Li; }" tblname objref stat.created stat.modified stat.deleted;*)
   db
   |> (
     Table.touch stat.modified objref Row.empty
@@ -137,39 +136,25 @@ let make_change stat tblname objref fldname newval db =
   if TableSet.mem tblname (Database.tableset db) then begin
     if (Table.mem objref (TableSet.find tblname (Database.tableset db))) then begin
       if (Row.mem fldname (Table.find objref (TableSet.find tblname (Database.tableset db)))) then
-        begin
-(*          debug "Case 1: everything exists, modifying - %s/%s/%s at {%Li; %Li; %Li;}" tblname objref fldname stat.created stat.modified stat.deleted;*)
           apply stat.modified tblname objref fldname newval db
-        end
       else
         begin
-          if stat.created = stat.modified then begin
-(*            debug "Case 2: Field doesn't exist, creating - %s/%s/%s at {%Li; %Li; %Li;}" tblname objref fldname stat.created stat.modified stat.deleted; *)
+          if stat.created = stat.modified then
             apply stat.created tblname objref fldname newval db
-          end
           else
-            begin
-(*              debug "Case 3: Field doesn't exist but we have two stats, creating and modifying - %s/%s/%s at {%Li; %Li; %Li;}" tblname objref fldname stat.created stat.modified stat.deleted; *)
-              apply stat.modified tblname objref fldname newval (apply stat.created tblname objref fldname (Schema.Value.String "XXX") db)
-            end
+            apply stat.modified tblname objref fldname newval (apply stat.created tblname objref fldname (Schema.Value.String "XXX") db)
         end
     end
     else
       begin
-        if stat.created = stat.modified then begin
-(*          debug "Case 4: Row doesn't exist - creating - %s/%s/%s at {%Li; %Li; %Li;}" tblname objref fldname stat.created stat.modified stat.deleted; *)
+        if stat.created = stat.modified then
           apply stat.created tblname objref fldname newval db
-        end
-        else begin
-(*          debug "Case 5: Row doesn't exist but we have two stats, creating and modifying - %s/%s/%s at {%Li; %Li; %Li;}" tblname objref fldname stat.created stat.modified stat.deleted; *)
+        else
           apply stat.modified tblname objref fldname newval (apply stat.created tblname objref fldname (Schema.Value.String (tblname^objref)) db)
-        end
       end
   end
-  else begin
-(*    debug "Case 6: Table doesn't exist creating and modifying - %s/%s/%s at {%Li; %Li; %Li;}" tblname objref fldname stat.created stat.modified stat.deleted; *)
+  else
     apply stat.modified tblname objref fldname newval (make_empty_table {stat with created=(-1L);} tblname db)
-  end
 
 
 let compare_by_tblname (c1: (string * int)) (c2: (string * int)) =
@@ -214,14 +199,10 @@ let f_table (table:table) =
   | _ -> List.concat (List.rev_map (f_row u) table.rows)
 
 let f_all table_list =
-  let l = List.sort compare_by_modified (List.concat (List.rev_map f_table table_list)) in
-(*  List.iter (fun (u:update) ->
-      debug "RWD UPDATE {%s/%s/%s/v - {%Li; %Li; %Li} }" u.tblname u.objref u.fldname u.stat.created u.stat.modified u.stat.deleted) l;*)
-  l
+  List.sort compare_by_modified (List.concat (List.rev_map f_table table_list))
 
 
 let make_change_with_db_reply db (update:update) =
-  (*debug "Deciding path: [%s fld:%s] %s - {%Li; %Li; %Li}" update.tblname update.fldname update.objref update.stat.created update.stat.modified update.stat.deleted;*)
   match update.objref with
   | "" -> make_empty_table update.stat update.tblname db
   | _ -> (match update.fldname with
@@ -261,56 +242,28 @@ let modified_time_stamp_sanity db =
 let created_time_stamp_sanity db =
   List.for_all (created_check db) (get_table_list db)
 
-let time name f = 
-    let start = Unix.gettimeofday () in
-    let result = f () in
-    let end' = Unix.gettimeofday () in
-    Printf.printf "XXX Time for function call '%s': %f\n" name (end' -. start);
-    result
-
-module MySet = Set.Make(String)
-
 let apply_changes (delta:delta) =
-  (*debug "Delta changes %s" (delta_to_string delta);*)
-  let f_alled = time "compute_f_all" (fun () -> f_all delta.tables) in
-  if Random.int 1 = 0 then begin
-    let delay = (Random.float 0.1) in
-    debug "Delaying by: %f" delay;
-    Thread.delay delay;
-  end;
   if (Manifest.generation (Database.manifest !Xapi_slave_db.slave_db)) < delta.fresh_token then
     begin
       let new_db =
         !Xapi_slave_db.slave_db
-        |> (fun db -> List.fold_left (make_change_with_db_reply) db f_alled)
+        |> (fun db -> List.fold_left (make_change_with_db_reply) db (f_all delta.tables))
         |> (fun db -> List.fold_left (make_delete_with_db_reply) db delta.deletes)
         |> Database.set_generation delta.fresh_token
       in
       Xapi_slave_db.slave_db := new_db;
-    end;(*
-  else begin
-    if (Manifest.generation (Database.manifest !Xapi_slave_db.slave_db)) = delta.fresh_token then
-      debug "EQUAL TOKEN: %s" (delta_to_string delta);
-  end;*)
+    end;
   (* Need to check that we haven't missed anything *)
   let slave_counts = object_count !Xapi_slave_db.slave_db in
   if not (count_check slave_counts delta.counts) then
     begin
       debug "The local database and the master database do not appear to be the same size - clearing slave db";
-      let keys1 = MySet.of_list (List.map fst slave_counts) in
-      let keys2 = MySet.of_list (List.map fst delta.counts) in
-      let diff = MySet.diff keys1 keys2 in
-      let diff2 = MySet.diff keys2 keys1 in
-      Printf.printf "List.length slave_counts=%d\n" (List.length slave_counts);
-      MySet.iter (fun key -> Printf.printf "diff1: %s\n" key) diff;
-      MySet.iter (fun key -> Printf.printf "diff2: %s\n" key) diff2;
-      List.iter2 (fun (s,i) (s2, i2) -> if s = s2 && i <>i2 then debug "mismatch: %s %i %i" s i i2) delta.counts slave_counts;
       Xapi_slave_db.clear_db ()
-    end
-(*  if not (created_time_stamp_sanity !Xapi_slave_db.slave_db && modified_time_stamp_sanity !Xapi_slave_db.slave_db) then begin
+    end;
+  if not (created_time_stamp_sanity !Xapi_slave_db.slave_db && modified_time_stamp_sanity !Xapi_slave_db.slave_db) then begin
     debug "The stat fields are not correct - clearing slave db";
     Xapi_slave_db.clear_db ()
-  end*)
+  end
 
 let send_notification __context token (u:update) =
   let __context = Xapi_slave_db.update_context_db __context in
@@ -322,12 +275,12 @@ let send_notification __context token (u:update) =
   if u.stat.created < token && token < u.stat.modified then
     reasons := ["mod"];
   if u.stat.modified = u.stat.deleted then
-    reasons := []
+    reasons := [];
 
-(*  List.iter (fun r ->
+  List.iter (fun r ->
       debug "RWD: sendning %s notification for %s/%s" r u.tblname u.objref;
       Db_action_helper.events_notify u.tblname r u.objref;
-    ) !reasons*)
+    ) !reasons
 
 let handle_notifications __context token (master_delta:delta) =
   let dels = ref [] in
