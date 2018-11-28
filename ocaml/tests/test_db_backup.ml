@@ -385,7 +385,7 @@ let test_db_counts () =
 
   Xapi_slave_db.clear_db ()
 
-let test_db_counts_large () =
+let do_test_with_x_vms x =
   Xapi_slave_db.clear_db ();
   let __context = make_test_database () in
   let vm_create_count = 1 in
@@ -403,7 +403,7 @@ let test_db_counts_large () =
         let new_vm = make_vm ~__context ~name_label:"badone" () in
         Db.VM.destroy ~__context ~self:new_vm;
         inner (n-1)
-    in inner 100;
+    in inner x;
     finished := true) () in
 
   let rec loop token =
@@ -419,18 +419,31 @@ let test_db_counts_large () =
     end
   in
   let _final_token = loop (-2L) in
-
   let _changes_db = !(Xapi_slave_db.slave_db) in
   let _init_db = Db_ref.get_database (Context.database_of __context) in
-
   let counts1 = Xapi_database_backup.object_count _init_db in
   let counts2 = Xapi_database_backup.object_count _changes_db in
   List.iter (fun (t,v) -> Printf.printf "ty: %s  count1: %d count2: %d\n" t v (List.assoc t counts2)) counts1;
-
   Alcotest.(check bool) "Created vms - object count equal" true
     (Xapi_database_backup.count_check (Xapi_database_backup.object_count _init_db) (Xapi_database_backup.object_count _changes_db));
   Alcotest.(check bool) "Vms created - generations equal" true (get_gen _init_db = get_gen _changes_db);
   Alcotest.(check bool) "Vms created - tables correct" true (dbs_are_equal _init_db _changes_db)
+
+let test_db_counts_large () =
+  do_test_with_x_vms 100;
+  Xapi_slave_db.clear_db ()
+
+let test_db_vms_1000 () =
+  do_test_with_x_vms 1000;
+  Xapi_slave_db.clear_db ()
+
+let test_db_vms_10_000 () =
+  do_test_with_x_vms 10_000;
+  Xapi_slave_db.clear_db ()
+
+let test_db_vms_100_000 () =
+  do_test_with_x_vms 100_000;
+  Xapi_slave_db.clear_db ()
 
 let test =
   [
@@ -445,5 +458,8 @@ let test =
     "test_db_events_with_session", `Quick, test_db_events_with_session;
     "test_db_counts", `Quick, test_db_counts;
     "test_db_counts_large", `Slow, test_db_counts_large;
+    "test_db_vms_1000", `Slow, test_db_vms_1000;
+    "test_db_vms_10000", `Slow, test_db_vms_10_000;
+    "test_db_vms_100000", `Slow, test_db_vms_100_000;
   ]
 
