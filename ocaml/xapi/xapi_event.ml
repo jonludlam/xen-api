@@ -473,9 +473,8 @@ let from_inner __context subs from from_t deadline =
        ) ([],[],[],!last_generation) tables) in
 
   let content = ref { msg_gen = 0L; messages = [];tableset = Db_cache_types.TableSet.empty;creates = []; mods = []; deletes = []; last = 0L;} in
-  if Context.has_session_id __context then
-    begin
-      let session = Context.get_session_id __context in
+  begin
+      let session = if Context.has_session_id __context then Context.get_session_id __context else (Ref.make ()) in
       (* Each event.from should have an independent subscription record *)
       let msg_gen, messages, tableset, (creates, mods, deletes, last) =
         with_call session subs
@@ -493,25 +492,6 @@ let from_inner __context subs from from_t deadline =
                  result in
              grab_nonempty_range ()
           ) in
-      last_generation := last;
-      content := {msg_gen; messages; tableset; creates; mods; deletes; last;};
-    end
-  else
-    begin
-      let msg_gen, messages, tableset, (creates, mods, deletes, last) =
-        let rec grab_nonempty_range () =
-          let (msg_gen, messages, tableset, (creates,mods,deletes,last)) as result =
-            Db_lock.with_lock (fun () -> grab_range (Context.database_of __context)) in
-          if creates = [] && mods = [] && deletes = [] && messages = [] && Unix.gettimeofday () < deadline then
-            begin
-              last_generation := last;
-              last_msg_gen := msg_gen;
-              Thread.delay 0.05;
-              grab_nonempty_range ()
-            end
-          else
-            result in
-        grab_nonempty_range () in
       last_generation := last;
       content := {msg_gen; messages; tableset; creates; mods; deletes; last;};
     end;
