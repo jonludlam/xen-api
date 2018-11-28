@@ -90,18 +90,18 @@ let backup_condition = Condition.create ()
 
 let get_delta __context token =
   Mutex.execute Db_lock.dbcache_mutex (fun () ->
-    let rec get () =
-      let db = Db_ref.get_database (Context.database_of __context) in
-      let tables = check_for_updates token db in
-      let deleted = get_deleted token db in
-      if tables=[] && deleted=[] then begin
-        Condition.wait backup_condition Db_lock.dbcache_mutex;
-        get ()
-      end else
-        (db,tables,deleted)
-    in
-    let (db,tables,deleted) = get () in
-    let t = Manifest.generation (Database.manifest db) in
+      let rec get () =
+        let db = Db_ref.get_database (Context.database_of __context) in
+        let tables = check_for_updates token db in
+        let deleted = get_deleted token db in
+        if tables=[] && deleted=[] then begin
+          Condition.wait backup_condition Db_lock.dbcache_mutex;
+          get ()
+        end else
+          (db,tables,deleted)
+      in
+      let (db,tables,deleted) = get () in
+      let t = Manifest.generation (Database.manifest db) in
       {fresh_token=t;
        last_event_token=Int64.pred t;
        tables=tables;
@@ -110,10 +110,9 @@ let get_delta __context token =
 
 let database_callback update t =
   Db_lock.with_lock (fun () ->
-    Condition.broadcast backup_condition)
+      Condition.broadcast backup_condition)
 
 let handler (req: Request.t) s _ =
-  req.Http.Request.close <- true;
   try
     let token = Generation.of_string (snd (List.find (fun (x,y) -> x = "token") req.query)) in
     Server_helpers.exec_with_new_task "Database backup" ~task_in_database:false (fun __context ->
@@ -152,7 +151,7 @@ let make_change stat tblname objref fldname newval db =
   if TableSet.mem tblname (Database.tableset db) then begin
     if (Table.mem objref (TableSet.find tblname (Database.tableset db))) then begin
       if (Row.mem fldname (Table.find objref (TableSet.find tblname (Database.tableset db)))) then
-          apply stat.modified tblname objref fldname newval db
+        apply stat.modified tblname objref fldname newval db
       else
         begin
           if stat.created = stat.modified then
@@ -190,10 +189,10 @@ let compare_by_modified u1 u2 =
     Int64.compare u1.stat.modified u2.stat.modified
 
 let f_field u (field:field) =
-    {u with
-     stat = field.stat;
-     fldname = field.fldname;
-     value = field.value;}
+  {u with
+   stat = field.stat;
+   fldname = field.fldname;
+   value = field.value;}
 
 let f_row u (row:row) =
   let u = {u with
@@ -294,7 +293,7 @@ let send_notification __context token (u:update) =
     reasons := [];
 
   List.iter (fun r ->
-      debug "RWD: sendning %s notification for %s/%s" r u.tblname u.objref;
+      if u.tblname = "session" then () else debug "RWD: sendning %s notification for %s/%s" r u.tblname u.objref;
       Db_action_helper.events_notify u.tblname r u.objref;
     ) !reasons
 
@@ -313,27 +312,39 @@ let write_db_to_disk =
       Db_cache_impl.sync (Db_conn_store.read_db_connections ()) !Xapi_slave_db.slave_db
     end
 
+let start_stunnel_connection () =
+  let addr = Pool_role.get_master_address() in
+  let _psec = !Xapi_globs.pool_secret in
+  debug "Starting master connection watchdog";
+  Slave_backup_master_connection.get_master_address := Pool_role.get_master_address;
+  Slave_backup_master_connection.master_rpc_path := Constants.database_backup_uri;
+  Slave_backup_master_connection.on_database_connection_established := (fun () -> Slave_backup_master_connection.get_master_address := Pool_role.get_master_address);
+  Slave_backup_master_connection.start_connection addr;
+  Slave_backup_master_connection.open_secure_connection ()
+
 let loop ~__context () =
-  let uri = Constants.database_backup_uri in
   let delay_seconds = 300.0 in
   let start = Mtime_clock.counter () in
   let token_str = ref "-2" in
+  let psec = Xapi_globs.pool_secret in
+  let addr = ref (Pool_role.get_master_address()) in
   while (true) do
+    let new_master_address = Pool_role.get_master_address () in
+    let new_pool_secret = !Xapi_globs.pool_secret in
+    if new_master_address <> !addr || new_pool_secret <> !psec then begin
+      addr := new_master_address;
+      psec := new_pool_secret;
+      start_stunnel_connection ();
+    end;
     let now = Mtime_clock.count start in
-    let addr = Pool_role.get_master_address() in
-    let psec = !Xapi_globs.pool_secret in
-    let req = Xapi_http.http_request ~cookie:["pool_secret", psec] ~query:[("token", !token_str)] Http.Get uri in
-    let transport = SSL(SSL.make (), addr, !Xapi_globs.https_port) in
-    let changes = with_transport transport
-        (with_http req
-           (fun (response, fd) ->
-              let res = match response.Http.Response.content_length with
-                | None -> raise Content_length_required
-                | Some l -> Xapi_stdext_unix.Unixext.really_read_string fd (Int64.to_int l)
-              in
-              delta_of_rpc (Jsonrpc.of_string res)
-           )
-        ) in
+
+    let changes =
+      !token_str
+      |> Slave_backup_master_connection.execute_remote_fn
+      |> Jsonrpc.of_string
+      |> delta_of_rpc
+    in
+
     Mutex.execute Xapi_slave_db.slave_db_mutex (fun () -> apply_changes changes);
     handle_notifications __context (Int64.of_string !token_str) changes;
     if Mtime.Span.to_s now > delay_seconds then write_db_to_disk;
@@ -346,6 +357,7 @@ let loop ~__context () =
 let slave_db_backup_loop ~__context () =
   while (true) do
     try
+      start_stunnel_connection ();
       debug "Starting slave db thread with clear db";
       Xapi_slave_db.clear_db ();
       loop __context ()
