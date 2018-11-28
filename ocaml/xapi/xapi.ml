@@ -94,7 +94,7 @@ let start_database_engine () =
 
   Db_ref.update_database t (Database.register_callback "redo_log" Redo_log.database_callback);
   Db_ref.update_database t (Database.register_callback "events" Eventgen.database_callback);
-
+  Db_ref.update_database t (Database.register_callback "slave_backup" Xapi_database_backup.database_callback);
   debug "Performing initial DB GC";
   Db_gc.single_pass ();
 

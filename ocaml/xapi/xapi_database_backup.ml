@@ -86,15 +86,31 @@ let counter db table =
 let object_count db =
   List.rev_map (counter db) (get_table_list db)
 
+let backup_condition = Condition.create ()
+
 let get_delta __context token =
   Mutex.execute Db_lock.dbcache_mutex (fun () ->
+    let rec get () =
       let db = Db_ref.get_database (Context.database_of __context) in
-      let t = Manifest.generation (Database.manifest db) in
+      let tables = check_for_updates token db in
+      let deleted = get_deleted token db in
+      if tables=[] && deleted=[] then begin
+        Condition.wait backup_condition Db_lock.dbcache_mutex;
+        get ()
+      end else
+        (db,tables,deleted)
+    in
+    let (db,tables,deleted) = get () in
+    let t = Manifest.generation (Database.manifest db) in
       {fresh_token=t;
        last_event_token=Int64.pred t;
-       tables=(check_for_updates token db);
-       deletes=(get_deleted token db);
-       counts=(object_count db)})
+       tables=tables;
+       deletes=deleted;
+       counts=object_count db})
+
+let database_callback update t =
+  Db_lock.with_lock (fun () ->
+    Condition.broadcast backup_condition)
 
 let handler (req: Request.t) s _ =
   req.Http.Request.close <- true;

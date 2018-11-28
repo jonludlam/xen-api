@@ -404,7 +404,11 @@ let do_test_with_x_vms x =
         Db.VM.destroy ~__context ~self:new_vm;
         inner (n-1)
     in inner x;
-    finished := true) () in
+    finished := true;
+    (* One final one to wake the event thread below *)
+    let _new_vm = make_vm ~__context ~name_label:"badone_dontdelete" () in
+    ()
+    ) () in
 
   let rec loop token =
     let update () =
