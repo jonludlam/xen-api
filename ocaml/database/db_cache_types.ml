@@ -14,6 +14,9 @@
 
 open Db_exn
 
+module D=Debug.Make(struct let name="db_cache_types" end)
+open D
+
 module Time = struct
   type t = Generation.t [@@deriving rpcty]
 end
@@ -58,6 +61,7 @@ module type MAP = sig
   val typ_of : t Rpc.Types.typ
   val empty : t
   val add: Time.t -> string -> value -> t -> t
+  val keys: t -> string list
   val remove : Time.t -> string -> t -> t
   val fold : (string -> Stat.t -> value -> 'b -> 'b) -> t -> 'b -> 'b
   val fold_over_recent : Time.t -> (string -> Stat.t -> value -> 'b -> 'b) -> t -> 'b -> 'b
@@ -92,6 +96,7 @@ module Make = functor(V: VAL) -> struct
   let add generation key v =
     let stat = Stat.make generation in
     StringMap.add key { stat; v }
+  let keys x = StringMap.bindings x |> List.map fst
   let find key map = (StringMap.find key map).v
   let mem = StringMap.mem
   let iter f = StringMap.iter (fun key x -> f key x.v)
@@ -114,8 +119,8 @@ module Make = functor(V: VAL) -> struct
   let fold_over_recent since f t initial = StringMap.fold (fun x y z -> if y.stat.Stat.modified > since then f x y.stat y.v z else z) t initial
   let slice_recent since t = StringMap.fold (fun key v acc -> if v.stat.Stat.modified > since then StringMap.add key {v with v=V.slice_recent since v.v} acc else acc) t StringMap.empty
   let apply_recent t ~deltas =
-    StringMap.fold (fun k v row ->
-      if mem k row then StringMap.update k v (fun x -> {v with v=V.apply_recent x.v v.v}) row else StringMap.add k v row) t deltas 
+    StringMap.fold (fun k deltav row ->
+      if mem k row then StringMap.update k deltav (fun x -> {x with v=V.apply_recent x.v ~deltas:deltav.v}) row else StringMap.add k deltav row) deltas t
 end
 
 module Row = struct
@@ -150,6 +155,7 @@ module Table = struct
   let get_deleted_len t = t.deleted_len
   let get_deleted t = t.deleted
   let add g key value t = {t with rows=StringRowMap.add g key value t.rows}
+  let keys t = StringRowMap.keys t.rows
   let empty = {rows=StringRowMap.empty; deleted_len = 1; deleted=[(0L,0L,"")] }
   let fold f t acc = StringRowMap.fold f t.rows acc
   let find key t = StringRowMap.find key t.rows
@@ -170,7 +176,8 @@ module Table = struct
   let update g key default f t = {t with rows = StringRowMap.update g key default f t.rows}
   let fold_over_recent since f t acc = StringRowMap.fold_over_recent since f t.rows acc
   let slice_recent since t =
-    let deleted = List.filter (fun (created, deleted, r) -> (deleted > since && created <= since)) t.deleted in
+    let deleted = List.filter (fun (created, deleted, r) -> (deleted > since)) t.deleted in
+    debug "XXX slice_recent: deleted=[%s]" (String.concat ";" (List.map (fun (_,_,str) -> str) deleted));
     {rows = StringRowMap.slice_recent since t.rows;
     deleted; deleted_len = List.length deleted}
 
@@ -192,9 +199,15 @@ module Table = struct
       if deleted_len_uncapped < upper_length_deleted_queue
       then deleted_len_uncapped, deltas.deleted @ t.deleted
       else lower_length_deleted_queue, (Xapi_stdext_std.Listext.List.take lower_length_deleted_queue (deltas.deleted @ t.deleted))
-    in 
-    {rows = StringRowMap.apply_recent t.rows ~deltas:deltas.rows;
-     deleted; deleted_len }
+    in
+    debug "Rows before: [%s]" (String.concat ";" (StringRowMap.fold (fun key row stat xs -> key::xs) t.rows []));
+    debug "Rows in delta: [%s]" (String.concat ";" (StringRowMap.fold (fun key row stat xs -> key::xs) deltas.rows []));
+
+    debug "Deleting [%s]" (String.concat ";" (List.map (fun (_,_,str) -> str) t.deleted));
+    let rows = StringRowMap.apply_recent t.rows ~deltas:deltas.rows in
+    let rows = List.fold_left (fun rows (_,_,del) -> StringRowMap.remove () del rows) rows deltas.deleted in
+    debug "Rows remaining: [%s]" (String.concat ";" (StringRowMap.fold (fun key row stat xs -> key::xs) rows []));
+    {rows; deleted; deleted_len }
 
 end
 

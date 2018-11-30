@@ -7,53 +7,17 @@ open Db_cache_types
 open Stdext
 open Threadext
 
-type stat =
-  { created :  int64
-  ; modified : int64
-  ; deleted :  int64
-  } [@@deriving rpc]
-
-type field =
-  { fldname : string
-  ; stat :    stat
-  ; value :   Schema.Value.t
-  } [@@deriving rpc]
-
-type row =
-  { objref : string
-  ; stat :   stat
-  ; fields :  field list
-  } [@@deriving rpc]
-
-type table =
-  { tblname : string
-  ; stat :    stat
-  ; rows :   row list
-  } [@@deriving rpc]
-
-type del_tables =
-  { key:   string
-  ; table: string
-  } [@@deriving rpc]
-
 type delta =
   { fresh_token: int64
   ; last_event_token: int64
-  ; tables :     table list
-  ; deletes :    del_tables list
   ; counts : (string * int) list
-  } [@@deriving rpc]
+  ; slice : Db_cache_types.TableSet.t
+  } [@@deriving rpcty]
 
-type update =
-  { stat:stat
-  ; tblname:string
-  ; objref:string
-  ; fldname:string
-  ; value:Schema.Value.t
-  }
+let rpc_of ty x = Rpcmarshal.marshal ty.Rpc.Types.ty x
 
 exception Content_length_required
-let delta_to_string (d:delta) = Jsonrpc.to_string (rpc_of_delta d)
+let delta_to_string (d:delta) = Jsonrpc.to_string (rpc_of delta d)
 
 let get_gen db =
   db
@@ -64,21 +28,6 @@ let get_gen db =
 
 let get_table_list db =
   TableSet.fold_over_recent (-2L) (fun table stat value acc -> table::acc) (Database.tableset db) []
-
-let get_del_from_table_name token ts table =
-  Table.fold_over_deleted token (fun key _ acc -> ({key; table})::acc) (TableSet.find table ts) []
-
-let get_deleted ~token db =
-  List.concat (List.rev_map (get_del_from_table_name token (Database.tableset db)) (get_table_list db))
-
-let check_for_updates token db =
-  let ts = Database.tableset db in
-  let handle_obj obj = Row.fold_over_recent token (fun fldname {created; modified; deleted} value acc ->
-      {fldname; stat={created;modified;deleted}; value=value}::acc) obj [] in
-  let handle_table table = Table.fold_over_recent token (fun objref {created; modified; deleted} value acc ->
-      {objref; stat={created;modified;deleted}; fields=(handle_obj value)}::acc) table [] in
-  TableSet.fold_over_recent token (fun tblname {created; modified; deleted} value acc ->
-      {tblname; stat={created;modified;deleted}; rows=(handle_table value)}::acc) ts []
 
 let counter db table =
   (table, (Table.fold (fun _ _ _ acc -> succ(acc)) (TableSet.find table (Database.tableset db)) 0))
@@ -92,21 +41,19 @@ let get_delta __context token =
   Mutex.execute Db_lock.dbcache_mutex (fun () ->
       let rec get () =
         let db = Db_ref.get_database (Context.database_of __context) in
-        let tables = check_for_updates token db in
-        let deleted = get_deleted token db in
-        if tables=[] && deleted=[] then begin
+        let slice = Db_cache_types.TableSet.slice_recent token (Database.tableset db) in
+        if Db_cache_types.TableSet.keys slice = [] then begin
           Condition.wait backup_condition Db_lock.dbcache_mutex;
           get ()
         end else
-          (db,tables,deleted)
+          (db,slice)
       in
-      let (db,tables,deleted) = get () in
+      let (db,slice) = get () in
       let t = Manifest.generation (Database.manifest db) in
       {fresh_token=t;
        last_event_token=Int64.pred t;
-       tables=tables;
-       deletes=deleted;
-       counts=object_count db})
+       counts=object_count db;
+       slice=Db_cache_types.TableSet.slice_recent token (Database.tableset db)})
 
 let database_callback update t =
   Db_lock.with_lock (fun () ->
@@ -118,58 +65,13 @@ let handler (req: Request.t) s _ =
     Server_helpers.exec_with_new_task "Database backup" ~task_in_database:false (fun __context ->
         token
         |> get_delta __context
-        |> rpc_of_delta
+        |> rpc_of delta
         |> Jsonrpc.to_string
         |> Http_svr.response_str req s
       )
   with Not_found -> debug "No valid token found in request"
 
 (* Slave Functions *)
-
-let apply time tblname objref fldname newval =
-  (fun _ -> newval)
-  |> Row.update time fldname newval
-  |> Table.update time objref Row.empty
-  |> TableSet.update time tblname Table.empty
-  |> Database.update
-
-let make_from_barrier stat tblname objref db =
-  db
-  |> (
-    Table.touch stat.modified objref Row.empty
-    |> TableSet.update stat.modified tblname Table.empty
-    |> Database.update
-  )
-  |> Database.increment
-
-let make_empty_table stat tblname =
-  (fun t -> t)
-  |> TableSet.update stat.created tblname Table.empty
-  |> Database.update
-
-let make_change stat tblname objref fldname newval db =
-  if TableSet.mem tblname (Database.tableset db) then begin
-    if (Table.mem objref (TableSet.find tblname (Database.tableset db))) then begin
-      if (Row.mem fldname (Table.find objref (TableSet.find tblname (Database.tableset db)))) then
-        apply stat.modified tblname objref fldname newval db
-      else
-        begin
-          if stat.created = stat.modified then
-            apply stat.created tblname objref fldname newval db
-          else
-            apply stat.modified tblname objref fldname newval (apply stat.created tblname objref fldname (Schema.Value.String "XXX") db)
-        end
-    end
-    else
-      begin
-        if stat.created = stat.modified then
-          apply stat.created tblname objref fldname newval db
-        else
-          apply stat.modified tblname objref fldname newval (apply stat.created tblname objref fldname (Schema.Value.String (tblname^objref)) db)
-      end
-  end
-  else
-    apply stat.modified tblname objref fldname newval (make_empty_table {stat with created=(-1L);} tblname db)
 
 
 let compare_by_tblname (c1: (string * int)) (c2: (string * int)) =
@@ -182,128 +84,25 @@ let count_check (c1_list: (string * int) list) (c2_list: (string * int) list) =
     List.for_all2 (fun (a,b) (c,d) -> a=c && b=d) c1_list c2_list
   with invalid_arg -> false
 
-let compare_by_modified u1 u2 =
-  if u1.stat.modified = u2.stat.modified then
-    Int64.compare u1.stat.created u2.stat.created
-  else
-    Int64.compare u1.stat.modified u2.stat.modified
-
-let f_field u (field:field) =
-  {u with
-   stat = field.stat;
-   fldname = field.fldname;
-   value = field.value;}
-
-let f_row u (row:row) =
-  let u = {u with
-           stat = {row.stat with modified = (max row.stat.modified u.stat.modified)};
-           objref = row.objref;} in
-  match row.fields with
-  | [] -> [u]
-  | _ -> List.rev_map (f_field u) row.fields
-
-let f_table (table:table) =
-  let u = {stat = table.stat;
-           tblname = table.tblname;
-           objref = "";
-           fldname = "";
-           value = (Schema.Value.String "");
-          } in
-  match table.rows with
-  | [] -> [u]
-  | _ -> List.concat (List.rev_map (f_row u) table.rows)
-
-let f_all table_list =
-  List.sort compare_by_modified (List.concat (List.rev_map f_table table_list))
-
-
-let make_change_with_db_reply db (update:update) =
-  match update.objref with
-  | "" -> make_empty_table update.stat update.tblname db
-  | _ -> (match update.fldname with
-      | "" -> make_from_barrier update.stat update.tblname update.objref db
-      | _ -> make_change update.stat update.tblname update.objref update.fldname update.value db)
-
-let make_delete_with_db_reply db delete =
-  remove_row delete.table delete.key db
-
-let modified_check db tblname =
-  let _t = TableSet.find tblname (Database.tableset db) in
-  Table.fold (fun name tstat value ->
-      (fun (b:bool) ->
-         fst ((
-             (Row.fold (fun ref rowstat v ->
-                  (fun ((b:bool), (s:Db_cache_types.Stat.t)) ->
-                     (b && s.modified >= rowstat.modified, s)
-                  )))
-               value)
-              (true, tstat)))) _t true
-
-let created_check db tblname =
-  let _t = TableSet.find tblname (Database.tableset db) in
-  Table.fold (fun name tstat value ->
-      (fun (b:bool) ->
-         fst ((
-             (Row.fold (fun ref rowstat v ->
-                  (fun ((b:bool), (s:Db_cache_types.Stat.t)) ->
-                     (b && s.created <= rowstat.created, s)
-                  )))
-               value)
-              (true, tstat)))) _t true
-
-let modified_time_stamp_sanity db =
-  List.for_all (modified_check db) (get_table_list db)
-
-let created_time_stamp_sanity db =
-  List.for_all (created_check db) (get_table_list db)
 
 let apply_changes (delta:delta) =
-  if (Manifest.generation (Database.manifest !Xapi_slave_db.slave_db)) < delta.fresh_token then
-    begin
-      let new_db =
-        !Xapi_slave_db.slave_db
-        |> (fun db -> List.fold_left (make_change_with_db_reply) db (f_all delta.tables))
-        |> (fun db -> List.fold_left (make_delete_with_db_reply) db delta.deletes)
-        |> Database.set_generation delta.fresh_token
-      in
-      Xapi_slave_db.slave_db := new_db;
-    end;
-  (* Need to check that we haven't missed anything *)
-  let slave_counts = object_count !Xapi_slave_db.slave_db in
-  if not (count_check slave_counts delta.counts) then
-    begin
-      debug "The local database and the master database do not appear to be the same size - clearing slave db";
-      Xapi_slave_db.clear_db ()
-    end;
-  if not (created_time_stamp_sanity !Xapi_slave_db.slave_db && modified_time_stamp_sanity !Xapi_slave_db.slave_db) then begin
-    debug "The stat fields are not correct - clearing slave db";
-    Xapi_slave_db.clear_db ()
-  end
+  let open Db_cache_types in
+  let db = !Xapi_slave_db.slave_db in
+  let objects = TableSet.fold (fun tblname _st tbl acc ->
+    Table.keys tbl
+    |> List.fold_left (fun acc ref -> (tblname,ref)::acc) acc) delta.slice []
+  in
+  let objects = TableSet.fold (fun tblname _st tbl acc ->
+    Table.get_deleted tbl
+    |> List.fold_left (fun acc (_,_,ref) -> (tblname,ref)::acc) acc) delta.slice objects
+  in
+  let newdb = 
+    Db_cache_types.Database.update_tableset (fun tables ->
+      Db_cache_types.TableSet.apply_recent tables ~deltas:delta.slice) db
+  in
+  Xapi_slave_db.slave_db := Database.set_generation delta.fresh_token newdb;
+  objects
 
-let send_notification __context token (u:update) =
-  let __context = Xapi_slave_db.update_context_db __context in
-  let reasons = ref [] in
-  if token < u.stat.created && u.stat.created < u.stat.modified then
-    reasons := ["add"; "mod"];
-  if token < u.stat.created && u.stat.created = u.stat.modified then
-    reasons := ["add"];
-  if u.stat.created < token && token < u.stat.modified then
-    reasons := ["mod"];
-  if u.stat.modified = u.stat.deleted then
-    reasons := [];
-
-  List.iter (fun r ->
-      if u.tblname = "session" then () else debug "RWD: sendning %s notification for %s/%s" r u.tblname u.objref;
-      Db_action_helper.events_notify u.tblname r u.objref;
-    ) !reasons
-
-let handle_notifications __context token (master_delta:delta) =
-  let dels = ref [] in
-  Mutex.execute Xapi_slave_db.slave_db_mutex (fun () ->
-      dels := get_deleted token !Xapi_slave_db.slave_db;
-    );
-  List.iter (fun (d:del_tables) -> Db_action_helper.events_notify d.table "del" d.key) !dels;
-  List.iter (send_notification __context token) (f_all master_delta.tables)
 
 let write_db_to_disk =
   if !Xapi_globs.slave_dbs then
@@ -338,15 +137,21 @@ let loop ~__context () =
     end;
     let now = Mtime_clock.count start in
 
-    let changes =
+    let changes_result =
       !token_str
       |> Slave_backup_master_connection.execute_remote_fn
       |> Jsonrpc.of_string
-      |> delta_of_rpc
+      |> Rpcmarshal.unmarshal delta.Rpc.Types.ty
     in
 
-    Mutex.execute Xapi_slave_db.slave_db_mutex (fun () -> apply_changes changes);
-    handle_notifications __context (Int64.of_string !token_str) changes;
+    let changes =
+      match changes_result with
+      | Ok changes -> changes
+      | Error (`Msg m) -> failwith m
+    in
+  
+    let objs = Mutex.execute Xapi_slave_db.slave_db_mutex (fun () -> apply_changes changes) in
+    List.iter (fun (tblname,objref)-> debug "event trigger: mod on %s/%s" tblname objref; Db_action_helper.events_notify tblname "mod" objref) objs;
     if Mtime.Span.to_s now > delay_seconds then write_db_to_disk;
     if changes.last_event_token > (get_gen !Xapi_slave_db.slave_db) then begin
       token_str := Int64.to_string (get_gen !Xapi_slave_db.slave_db);

@@ -42,6 +42,8 @@ module type MAP = sig
   (** [add now key value map] returns a new map with [key] associated with [value],
       with creation time [now] *)
 
+  val keys : t -> string list
+
   val remove : Time.t -> string -> t -> t
   (** [remove now key t] removes the binding of [key] from [t]. *)
 
@@ -77,7 +79,7 @@ module type MAP = sig
       if there is a value associated with [t] then its modification time is set to [now];
       if there is no value associated with [t] then one is created with value [default].
       On exit there will be a binding of [key] whose modification time is [now] *)
-
+  
   val slice_recent : Time.t -> t -> t
 
   val apply_recent : t -> deltas:t -> t
